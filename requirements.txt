@@ -3,8 +3,8 @@ Flask
 Flask-SQLAlchemy
 Flask-Login
 Flask-WTF
-# psycopg2-binary
-mysql-connector-python
+psycopg2-binary
+# mysql-connector-python
 gunicorn
 python-dotenv
 google-api-python-client
