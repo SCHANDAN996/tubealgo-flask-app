@@ -1,0 +1,110 @@
+{% extends "app_layout.html" %}
+
+{% block app_content %}
+<div class="space-y-12">
+    <div class="bg-card p-6 rounded-xl border shadow-sm">
+        {% if channel %}
+            <div class="flex flex-col sm:flex-row items-center gap-6">
+                <img src="{{ channel.thumbnail_url }}" alt="Channel Thumbnail" class="w-24 h-24 rounded-full border-4 border-secondary">
+                <div class="flex-grow text-center sm:text-left">
+                    <h1 class="text-3xl font-bold text-foreground">{{ channel.channel_title }}</h1>
+                    {% if data and 'error' not in data %}
+                        <div class="flex justify-center sm:justify-start flex-wrap gap-4 sm:gap-6 mt-2 text-muted-foreground">
+                            <span><strong class="text-foreground">{{ "{:,.0f}".format(data['Subscribers']) }}</strong> Subscribers</span>
+                            <span><strong class="text-foreground">{{ "{:,.0f}".format(data['Total Views']) }}</strong> Views</span>
+                            <span><strong class="text-foreground">{{ "{:,.0f}".format(data['Video Count']) }}</strong> Videos</span>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <h2 class="text-2xl font-bold text-foreground mb-2 text-center">Connect Your YouTube Channel</h2>
+            <p class="text-muted-foreground text-center mb-4">To get started, enter your YouTube channel URL or @handle.</p>
+            <form method="POST" action="{{ url_for('dashboard.connect_channel') }}" class="max-w-xl mx-auto flex flex-col sm:flex-row gap-2">
+                <input type="text" name="channel_url" class="flex-grow bg-background border border-input rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary" placeholder="e.g., MrBeast, or full URL" required>
+                <button type="submit" class="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-semibold hover:bg-primary/90 transition-colors">Connect Channel</button>
+            </form>
+        {% endif %}
+    </div>
+
+    <div class="bg-card p-6 rounded-xl border shadow-sm">
+         <h2 class="text-2xl font-bold text-foreground mb-4 text-center">Quickly Analyze a Video</h2>
+         <form method="POST" action="{{ url_for('tool.video_analyzer') }}" class="max-w-xl mx-auto flex flex-col sm:flex-row gap-2">
+            <input type="text" name="video_url" class="flex-grow bg-background border border-input rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Paste any YouTube video URL or ID" required>
+            <button type="submit" class="bg-secondary text-secondary-foreground px-6 py-2 rounded-lg font-semibold hover:bg-border transition-colors">Analyze</button>
+        </form>
+    </div>
+
+    <div>
+        <h2 class="text-3xl font-bold text-foreground mb-8 text-center font-display">Your Toolkit</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <a href="{{ url_for('tool.video_analyzer') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-cyan/10 text-brand-cyan"><i class="fa-solid fa-magnifying-glass-chart text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">Video Analyzer</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Get deep insights on any single video.</p>
+                </div>
+            </a>
+            <a href="{{ url_for('tool.ai_generator') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-purple/10 text-brand-purple"><i class="fa-solid fa-wand-magic-sparkles text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">AI Co-Pilot</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Generate viral titles, tags, and descriptions.</p>
+                </div>
+            </a>
+            <a href="{{ url_for('tool.keyword_research') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-blue/10 text-brand-blue"><i class="fa-solid fa-key text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">Keyword Tool</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Find high-volume keywords and suggestions.</p>
+                </div>
+            </a>
+            <a href="{{ url_for('competitor.competitors') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-orange/10 text-brand-orange"><i class="fa-solid fa-users text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">Competitor Analysis</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Track and analyze competitor content.</p>
+                </div>
+            </a>
+            <a href="{{ url_for('manager.manage_videos') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-red/10 text-brand-red"><i class="fa-solid fa-video text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">YT Manager (Videos)</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Edit titles, descriptions, and tags for your videos.</p>
+                </div>
+            </a>
+            <a href="{{ url_for('manager.manage_playlists') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-pink/10 text-brand-pink"><i class="fa-solid fa-list-check text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">YT Manager (Playlists)</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Manage, edit, and create your playlists.</p>
+                </div>
+            </a>
+            
+            {% if get_setting('feature_video_upload', True) %}
+            <a href="{{ url_for('manager.upload') }}" class="group bg-card p-6 rounded-xl border hover:border-primary hover:shadow-lg hover:-translate-y-1 transition-all flex items-start space-x-4">
+                <div class="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 bg-brand-green/10 text-brand-green"><i class="fa-solid fa-cloud-arrow-up text-xl"></i></div>
+                <div>
+                    <h3 class="font-bold text-lg text-card-foreground">Upload Video</h3>
+                    <p class="text-muted-foreground text-sm mt-1">Directly upload new videos to your channel.</p>
+                </div>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if ai_suggestions and 'error' not in ai_suggestions and ai_suggestions|length > 0 %}
+    <div class="bg-card p-6 rounded-xl border shadow-sm">
+        <h2 class="text-2xl font-bold text-foreground mb-4">🤖 AI Video Suggestions</h2>
+        <div class="space-y-4">
+            {% for suggestion in ai_suggestions %}
+            <div class="border-l-4 border-primary pl-4 py-2 bg-secondary rounded-r-md">
+                <h4 class="font-bold text-foreground">{{ suggestion.title }}</h4>
+                <p class="text-muted-foreground text-sm">{{ suggestion.description }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

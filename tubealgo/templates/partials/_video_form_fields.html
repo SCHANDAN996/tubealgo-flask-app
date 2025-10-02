@@ -1,0 +1,43 @@
+<div>
+    <div class="flex justify-between items-center mb-1">
+        <label for="title" class="block text-sm font-medium text-foreground">Title</label>
+        <button type="button" @click="startGeneration('titles')" class="text-xs bg-primary/10 text-primary font-semibold px-3 py-1 rounded-full hover:bg-primary/20" :disabled="loadingState.titles">
+            <span x-show="!loadingState.titles"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate Titles</span>
+            <span x-show="loadingState.titles"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Generating...</span>
+        </button>
+    </div>
+    <textarea name="title" id="title" rows="3" class="block w-full bg-background border border-input rounded-lg p-3" x-model="titleField" required placeholder="Enter a title or leave blank to generate from a topic"></textarea>
+    <p x-show="titleError" x-text="titleError" x-transition class="text-xs text-destructive mt-1"></p>
+    <p x-show="!titleError" class="text-xs text-muted-foreground mt-1">✨ AI suggestions are based on your competitors' data.</p>
+</div>
+
+<div>
+    <div class="flex justify-between items-center mb-1">
+        <label for="description" class="block text-sm font-medium text-foreground">Description</label>
+        <button type="button" @click="startGeneration('description')" class="text-xs bg-primary/10 text-primary font-semibold px-3 py-1 rounded-full hover:bg-primary/20" :disabled="loadingState.desc">
+           <span x-show="!loadingState.desc"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate Description</span>
+           <span x-show="loadingState.desc"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Generating...</span>
+        </button>
+    </div>
+    <textarea name="description" id="description" rows="10" class="block w-full bg-background border border-input rounded-lg p-3" x-model="descriptionField"></textarea>
+</div>
+
+<div>
+    <div class="flex justify-between items-center mb-1">
+        <label for="tags" class="block text-sm font-medium text-foreground">Tags</label>
+        <button type="button" @click="startGeneration('tags')" class="text-xs bg-primary/10 text-primary font-semibold px-3 py-1 rounded-full hover:bg-primary/20" :disabled="loadingState.tags">
+           <span x-show="!loadingState.tags"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Generate Tags</span>
+           <span x-show="loadingState.tags"><i class="fa-solid fa-spinner animate-spin mr-1"></i> Generating...</span>
+        </button>
+    </div>
+    <div class="mt-1 block w-full bg-background border border-input rounded-lg p-2 min-h-[7rem]">
+        <template x-for="(tag, index) in tags" :key="index">
+            <span class="inline-flex items-center bg-secondary text-sm font-medium m-1 px-2 py-1 rounded">
+                <span x-text="tag"></span>
+                <button type="button" @click="removeTag(index)" class="ml-2 text-muted-foreground hover:text-destructive">&times;</button>
+            </span>
+        </template>
+        <input type="text" x-model="tagInput" @keydown.enter.prevent="addTag" @keydown.,.prevent="addTag" class="bg-transparent outline-none p-1" placeholder="Add a tag...">
+    </div>
+    <p class="text-xs text-muted-foreground mt-1">Type a tag and press Enter or Comma. Max 500 characters.</p>
+</div>

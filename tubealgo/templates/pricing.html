@@ -1,0 +1,157 @@
+{% extends "layout.html" %}
+{% block title %}Pricing & Plans - TubeAlgo{% endblock %}
+
+{% block content %}
+<div class="py-16 sm:py-24">
+    <div class="container mx-auto px-4">
+        <div class="text-center mb-16">
+            <h1 class="text-4xl md:text-5xl font-bold text-foreground font-display">Simple, Transparent Pricing</h1>
+            <p class="text-xl text-muted-foreground mt-4 max-w-2xl mx-auto">Choose the plan that's right for your channel's growth journey.</p>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-5xl mx-auto items-start">
+            
+            <div class="bg-card p-8 rounded-xl border shadow-sm flex flex-col">
+                <h3 class="text-2xl font-bold">Free</h3>
+                <p class="text-muted-foreground mt-2 h-12">For new creators getting started.</p>
+                <div class="my-6"><span class="text-5xl font-extrabold">₹0</span><span class="text-muted-foreground">/month</span></div>
+                <ul class="space-y-4 text-muted-foreground flex-grow">
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>2 Competitors</li>
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>5 Keyword Searches/day</li>
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>3 AI Generations/day</li>
+                </ul>
+                <a href="{{ url_for('auth.signup') }}" class="mt-8 w-full text-center bg-secondary text-secondary-foreground py-3 rounded-lg font-semibold hover:bg-border">Get Started</a>
+            </div>
+
+            {% for plan in plans %}
+            <div class="bg-card p-8 rounded-xl border-2 flex flex-col relative {% if plan.plan_id == 'creator' %}border-primary shadow-lg{% endif %}">
+                {% if plan.plan_id == 'creator' %}
+                <div class="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2"><span class="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full uppercase">Most Popular</span></div>
+                {% endif %}
+                <h3 class="text-2xl font-bold {% if plan.plan_id == 'creator' %}text-primary{% endif %}">{{ plan.name }}</h3>
+                <p class="text-muted-foreground mt-2 h-12">
+                    {% if plan.plan_id == 'creator' %}For creators ready to grow faster.
+                    {% elif plan.plan_id == 'pro' %}For professionals and agencies.
+                    {% endif %}
+                </p>
+                <div class="my-6">
+                    <span class="text-5xl font-extrabold">₹{{ (plan.price / 100)|int }}</span>
+                    {% if plan.slashed_price %}
+                    <span class="text-xl line-through text-muted-foreground ml-2">₹{{ (plan.slashed_price / 100)|int }}</span>
+                    {% endif %}
+                    <span class="text-muted-foreground">/month</span>
+                </div>
+                <ul class="space-y-4 text-muted-foreground flex-grow">
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.competitors_limit if plan.competitors_limit != -1 else 'Unlimited' }} Competitors</li>
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.keyword_searches_limit if plan.keyword_searches_limit != -1 else 'Unlimited' }} Searches/day</li>
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.ai_generations_limit if plan.ai_generations_limit != -1 else 'Unlimited' }} AI Generations/day</li>
+                    {% if plan.has_ai_suggestions %}<li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>AI Video Suggestions</li>{% endif %}
+                    {% if plan.has_discover_tools %}<li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>Discover Tools</li>{% endif %}
+                </ul>
+                <button 
+                    data-plan-id="{{ plan.plan_id }}"
+                    class="payment-btn mt-8 w-full py-3 rounded-lg font-semibold transition-colors 
+                           {% if plan.plan_id == 'creator' %}bg-primary text-primary-foreground hover:bg-primary/90
+                           {% else %}bg-secondary text-secondary-foreground hover:bg-border
+                           {% endif %}">
+                    Upgrade Now
+                </button>
+            </div>
+            {% endfor %}
+
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const paymentButtons = document.querySelectorAll('.payment-btn');
+
+    paymentButtons.forEach(button => {
+        button.addEventListener('click', async function(e) {
+            e.preventDefault();
+            
+            {% if current_user.is_authenticated %}
+                const planId = this.dataset.planId;
+                this.innerHTML = 'Processing...';
+                this.disabled = true;
+
+                // 1. Create Order
+                const orderResponse = await fetch("{{ url_for('payment.create_order') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plan: planId })
+                });
+
+                if (!orderResponse.ok) {
+                    alert('Could not create order. Please try again.');
+                    this.innerHTML = 'Upgrade Now';
+                    this.disabled = false;
+                    return;
+                }
+                const orderData = await orderResponse.json();
+
+                // 2. Configure and Open Razorpay
+                const options = {
+                    key: orderData.key_id,
+                    amount: orderData.amount,
+                    currency: orderData.currency,
+                    name: orderData.name,
+                    description: orderData.description,
+                    order_id: orderData.order_id,
+                    handler: async function (response) {
+                        // 3. Verify Payment
+                        const verifyResponse = await fetch("{{ url_for('payment.verify_payment') }}", {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_signature: response.razorpay_signature
+                            })
+                        });
+                        
+                        const verifyData = await verifyResponse.json();
+                        if (verifyData.status === 'success') {
+                            alert('Payment Successful! Your plan has been upgraded.');
+                            window.location.href = "{{ url_for('dashboard.dashboard') }}";
+                        } else {
+                            alert('Payment verification failed. Please contact support.');
+                        }
+                    },
+                    prefill: {
+                        name: "",
+                        email: orderData.prefill.email,
+                        contact: ""
+                    },
+                    notes: {
+                        address: "TubeAlgo Purchase"
+                    },
+                    theme: {
+                        color: "#7e22ce"
+                    },
+                    modal: {
+                        ondismiss: function() {
+                            // This function is called when user closes the popup
+                            button.innerHTML = 'Upgrade Now';
+                            button.disabled = false;
+                        }
+                    }
+                };
+                
+                const rzp1 = new Razorpay(options);
+                rzp1.on('payment.failed', function (response){
+                    alert("Payment Failed: " + response.error.description);
+                    button.innerHTML = 'Upgrade Now';
+                    button.disabled = false;
+                });
+                rzp1.open();
+
+            {% else %}
+                // If user is not logged in, redirect to signup
+                window.location.href = "{{ url_for('auth.signup') }}";
+            {% endif %}
+        });
+    });
+});
+</script>
+{% endblock %}

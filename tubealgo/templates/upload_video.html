@@ -1,0 +1,399 @@
+{% extends "app_layout.html" %}
+
+{% block app_content %}
+<div class="max-w-4xl mx-auto"
+     x-data='{
+        showCompetitorPrompt: false,
+        actionToContinue: null,
+        showTitleModal: false,
+        showTagsModal: false,
+        showTopicPrompt: false,
+        showScheduleModal: false,
+        flatpickrInstance: null,
+        scheduledTime: null,
+        previousVisibility: "private",
+        promptCallback: null,
+        promptTopic: "",
+        promptSuggestions: [],
+        promptLoading: false,
+        promptError: "",
+        titleError: "",
+        loadingState: { titles: false, tags: false, desc: false },
+        suggestedTitles: [],
+        suggestedTags: [],
+        selectedSuggestedTags: [],
+        hasRemovedSuggestion: false,
+        allSuggestedTags: [],
+        titleField: "",
+        descriptionField: "",
+        tags: [],
+        tagInput: "",
+        visibility: "private",
+        csrfToken: "{{ form.csrf_token._value() }}",
+
+        step: "date",
+        selectedDate: null,
+        selectedHour: "05",
+        selectedMinute: "00",
+        selectedPeriod: "PM",
+        hours: ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"],
+        minutes: ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"],
+        period: ["AM", "PM"],
+
+        isVideoShort: false,
+        isDragging: false,
+        fileName: "",
+        fileSize: "",
+
+        init() {
+            this.$watch("visibility", (value) => {
+                if (value === "schedule") {
+                    this.previousVisibility = this.visibility === "schedule" ? "private" : this.visibility;
+                    this.showScheduleModal = true;
+                } else {
+                    this.scheduledTime = null;
+                }
+            });
+            
+            this.$watch("showScheduleModal", (value) => {
+                if(value && !this.flatpickrInstance) {
+                    this.flatpickrInstance = flatpickr(this.$refs.flatpickr_container, {
+                        inline: true,
+                        enableTime: false,
+                        dateFormat: "Y-m-d",
+                        minDate: "today",
+                        defaultDate: "today",
+                        onChange: (selectedDates) => {
+                            if(selectedDates.length > 0) {
+                                this.selectedDate = selectedDates[0];
+                                this.step = "time";
+                            }
+                        }
+                    });
+                }
+                if(!value) this.step = "date";
+            });
+        },
+
+        handleFileSelect(event) { this.setFile(event.target.files[0]); },
+        handleDrop(event) { this.isDragging = false; this.setFile(event.dataTransfer.files[0]); },
+        setFile(file) {
+            if (file && file.type.startsWith("video/")) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                this.$refs.videoInput.files = dataTransfer.files;
+                this.fileName = file.name;
+                this.fileSize = (file.size / 1024 / 1024).toFixed(2) + " MB";
+                const videoElement = document.createElement("video");
+                videoElement.preload = "metadata";
+                videoElement.onloadedmetadata = () => {
+                    window.URL.revokeObjectURL(videoElement.src);
+                    const aspectRatio = videoElement.videoWidth / videoElement.videoHeight;
+                    this.isVideoShort = aspectRatio <= 1;
+                };
+                videoElement.src = URL.createObjectURL(file);
+            } else {
+                alert("Please select a valid video file.");
+            }
+        },
+        clearFile() {
+            this.$refs.videoInput.value = null;
+            this.fileName = "";
+            this.fileSize = "";
+            this.isVideoShort = false;
+        },
+
+        confirmSchedule() {
+            if (!this.selectedDate) {
+                this.selectedDate = this.flatpickrInstance.selectedDates[0] || new Date();
+            }
+            let hour = parseInt(this.selectedHour);
+            if(this.selectedPeriod === "PM" && hour < 12) hour += 12;
+            if(this.selectedPeriod === "AM" && hour === 12) hour = 0;
+            
+            this.selectedDate.setHours(hour, parseInt(this.selectedMinute), 0, 0);
+            this.scheduledTime = this.selectedDate.toISOString().slice(0, 19);
+            this.showScheduleModal = false;
+        },
+
+        cancelSchedule() {
+            if (!this.scheduledTime) {
+                this.visibility = this.previousVisibility;
+            }
+            this.showScheduleModal = false;
+        },
+        
+        get formattedScheduledTime() {
+            if (!this.scheduledTime) return "";
+            const date = new Date(this.scheduledTime.replace("T", " "));
+            return date.toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+        },
+        
+        startGeneration(type) {
+            if (!{{ has_competitors|tojson }}) {
+                this.actionToContinue = type;
+                this.showCompetitorPrompt = true;
+            } else {
+                if (type === "titles") this.executeGenerateTitles();
+                if (type === "tags") this.executeGenerateTags();
+                if (type === "description") this.executeGenerateDescription();
+            }
+        },
+
+        proceedWithoutCompetitors() {
+            this.showCompetitorPrompt = false;
+            if (this.actionToContinue) {
+                if (this.actionToContinue === "titles") this.executeGenerateTitles();
+                if (this.actionToContinue === "tags") this.executeGenerateTags();
+                if (this.actionToContinue === "description") this.executeGenerateDescription();
+            }
+            this.actionToContinue = null;
+        },
+
+        executeGenerateTitles() {
+            this.getTopic(this.titleField, (topic) => {
+                if (!topic || topic.trim() === "") { return; }
+                this.loadingState.titles = true;
+                fetch("{{ url_for('manager.api_generate_titles') }}", {
+                    method: "POST", headers: {"Content-Type": "application/json", "X-CSRFToken": this.csrfToken},
+                    body: JSON.stringify({ topic: topic })
+                })
+                .then(res => res.json()).then(data => {
+                    if (data.error) { alert("Error: " + (data.message || data.error)); } 
+                    else { this.suggestedTitles = data.titles; this.showTitleModal = true; }
+                }).finally(() => this.loadingState.titles = false);
+            });
+        },
+
+        executeGenerateTags() {
+            this.getTopic(this.titleField, (topic) => {
+                if (!topic || topic.trim() === "") { return; }
+                this.loadingState.tags = true;
+                this.allSuggestedTags.push(...this.suggestedTags);
+                this.allSuggestedTags = [...new Set(this.allSuggestedTags)];
+                fetch("{{ url_for('manager.api_generate_tags') }}", {
+                    method: "POST", headers: {"Content-Type": "application/json", "X-CSRFToken": this.csrfToken},
+                    body: JSON.stringify({ topic: topic, exclude_tags: this.allSuggestedTags })
+                })
+                .then(res => res.json()).then(data => {
+                    if (data.error) { alert("Error: " + (data.message || data.error)); }
+                    else { this.suggestedTags = data.tags || []; this.selectedSuggestedTags = []; this.hasRemovedSuggestion = false; this.showTagsModal = true; }
+                }).finally(() => this.loadingState.tags = false);
+            });
+        },
+
+        executeGenerateDescription() {
+            if (this.isTitleGeneric(this.titleField)) {
+                this.titleError = "Please set a proper title before generating a description.";
+                return;
+            }
+            this.titleError = "";
+            this.loadingState.desc = true;
+            fetch("{{ url_for('manager.api_generate_description') }}", {
+                method: "POST", headers: {"Content-Type": "application/json", "X-CSRFToken": this.csrfToken},
+                body: JSON.stringify({ topic: this.titleField, title: this.titleField })
+            })
+            .then(res => res.json()).then(data => {
+                if (data.error) { alert("Error: " + (data.message || data.error)); } 
+                else { this.descriptionField = data.description; }
+            }).finally(() => this.loadingState.desc = false);
+        },
+
+        isTitleGeneric(title) {
+            const lowerTitle = title.trim().toLowerCase();
+            if (lowerTitle === "") return true;
+            const junkWords = ["untitled", "test video", "my video", "new video", "video upload"];
+            return junkWords.some(junk => lowerTitle.includes(junk));
+        },
+
+        getTopic(currentTitle, callback) {
+            if (this.isTitleGeneric(currentTitle)) {
+                this.promptCallback = callback; this.showTopicPrompt = true;
+            } else {
+                callback(currentTitle);
+            }
+        },
+
+        handleTopicSubmit() {
+            if (this.promptTopic.trim() !== "") {
+                this.promptCallback(this.promptTopic);
+                this.showTopicPrompt = false; this.promptTopic = "";
+            } else {
+                this.promptError = "Please enter a topic.";
+            }
+        },
+
+        fetchPromptSuggestions() {
+            if (this.promptTopic.length < 2) { this.promptSuggestions = []; return; }
+            this.promptLoading = true;
+            fetch(`{{ url_for('tool.api_keyword_suggestions') }}?q=${this.promptTopic}`)
+                .then(res => res.json())
+                .then(data => { this.promptSuggestions = data.suggestions || []; })
+                .finally(() => this.promptLoading = false);
+        },
+
+        selectPromptSuggestion(suggestion) {
+            this.promptTopic = suggestion.keyword;
+            this.promptSuggestions = [];
+        },
+        
+        addTag() {
+            const newTag = this.tagInput.trim();
+            if (newTag && !this.tags.map(t=>t.toLowerCase()).includes(newTag.toLowerCase())) {
+                if (this.tags.join(", ").length + newTag.length > 500) { alert("Max 500 characters for tags."); return; }
+                this.tags.push(newTag);
+            }
+            this.tagInput = "";
+        },
+
+        removeTag(index) { this.tags.splice(index, 1); },
+        
+        selectTitle(title) { this.titleField = title; this.showTitleModal = false; },
+        
+        appendTag(tag) {
+            if (this.tags.join(", ").length + tag.length > 500) { return false; }
+            if (!this.tags.map(t => t.toLowerCase()).includes(tag.toLowerCase())) { this.tags.push(tag); }
+            return true;
+        },
+
+        toggleSuggestedTag(tag) {
+            const index = this.selectedSuggestedTags.indexOf(tag);
+            if (index > -1) { this.selectedSuggestedTags.splice(index, 1); } 
+            else { this.selectedSuggestedTags.push(tag); }
+        },
+
+        addSelectedTags() {
+            this.selectedSuggestedTags.forEach(tag => this.appendTag(tag));
+            this.showTagsModal = false;
+        },
+
+        addAllTags() {
+            this.suggestedTags.forEach(tag => this.appendTag(tag));
+            this.showTagsModal = false;
+        },
+
+        removeSuggestedTag(index, tag) {
+            this.suggestedTags.splice(index, 1);
+            const selectedIndex = this.selectedSuggestedTags.indexOf(tag);
+            if (selectedIndex > -1) { this.selectedSuggestedTags.splice(selectedIndex, 1); }
+            this.hasRemovedSuggestion = true;
+        }
+     }'>
+    <div class="mb-8">
+        <a href="{{ url_for('manager.manage_videos') }}" class="text-sm font-medium text-primary hover:underline">
+            <i class="fa-solid fa-arrow-left mr-2"></i>Back to YT Manager
+        </a>
+    </div>
+
+    <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm">
+        <h1 class="text-3xl font-bold mb-6 font-display">Upload New Video</h1>
+        <div x-show="showCompetitorPrompt" x-transition>
+            </div>
+
+        <form method="POST" enctype="multipart/form-data" class="space-y-6">
+            {{ form.hidden_tag() }}
+            <input type="hidden" name="tags" :value="tags.join(', ')">
+            <input type="hidden" name="publish_at" :value="scheduledTime">
+            
+            <div>
+                <label class="block text-sm font-medium text-foreground">Video File</label>
+                <div x-show="!fileName" @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @drop.prevent="handleDrop($event)"
+                     class="mt-1 relative flex justify-center w-full h-48 px-6 pt-5 pb-6 border-2 border-dashed rounded-lg transition-colors"
+                     :class="isDragging ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'">
+                    <div class="space-y-1 text-center m-auto">
+                        <i class="fa-solid fa-video text-4xl mx-auto text-muted-foreground"></i>
+                        <div class="flex text-sm text-gray-600">
+                            <label for="video_file" class="relative cursor-pointer bg-transparent rounded-md font-medium text-primary hover:text-primary/80">
+                                <span>Upload a file</span>
+                            </label>
+                            <p class="pl-1">or drag and drop</p>
+                        </div>
+                        <p class="text-xs text-muted-foreground">MP4, MOV, WebM, MKV, AVI</p>
+                    </div>
+                    {{ form.video_file(class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer", **{'x-ref': 'videoInput', '@change': 'handleFileSelect($event)'}) }}
+                </div>
+                <div x-show="fileName" x-transition class="mt-2 bg-secondary border border-border p-4 rounded-lg flex items-center justify-between">
+                    <div class="flex items-center gap-3"><i class="fa-solid fa-film text-primary text-2xl"></i>
+                        <div>
+                            <p class="text-sm font-semibold text-foreground" x-text="fileName"></p>
+                            <p class="text-xs text-muted-foreground" x-text="fileSize"></p>
+                        </div>
+                    </div>
+                    <button @click="clearFile()" type="button" class="text-muted-foreground hover:text-destructive text-xl">&times;</button>
+                </div>
+                {% if form.video_file.errors %}
+                    {% for error in form.video_file.errors %}
+                        <p class="text-xs text-destructive mt-1">{{ error }}</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            
+            {% include 'partials/_video_form_fields.html' %}
+            
+            <template x-if="!isVideoShort">
+                <div class="bg-secondary p-4 rounded-lg border border-border" 
+                     x-data="{
+                        newThumbnailUrl: null,
+                        handleFileSelect(event) {
+                            const file = event.target.files[0];
+                            if (file && file.type.startsWith('image/')) {
+                                if (file.size > 2 * 1024 * 1024) {
+                                    alert('File size should be less than 2MB.');
+                                    event.target.value = null;
+                                    return;
+                                }
+                                this.newThumbnailUrl = URL.createObjectURL(file);
+                            } else {
+                                this.newThumbnailUrl = null;
+                            }
+                        }
+                     }">
+                    <label class="block text-sm font-medium text-foreground mb-4">Thumbnail (Optional)</label>
+                    <div class="w-full aspect-video rounded-md border-2 border-dashed flex items-center justify-center bg-background mb-4"
+                         :class="{'border-primary': newThumbnailUrl}">
+                        <img x-show="newThumbnailUrl" :src="newThumbnailUrl" class="w-full h-full object-cover rounded-md">
+                        <span x-show="!newThumbnailUrl" class="text-xs text-muted-foreground">Select an image to preview</span>
+                    </div>
+                    <div>
+                        {{ form.thumbnail(class="block w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer", **{'@change': 'handleFileSelect($event)'}) }}
+                        <p class="text-xs text-muted-foreground mt-1">Recommended: 1280x720 pixels, under 2MB.</p>
+                    </div>
+                </div>
+            </template>
+            
+            <div x-show="isVideoShort" x-transition class="bg-secondary p-4 rounded-lg border border-border text-center">
+                <p class="text-sm text-muted-foreground">
+                    <i class="fa-solid fa-circle-info text-primary mr-2"></i>
+                    YouTube automatically selects a frame from your video as the thumbnail for Shorts.
+                </p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-foreground">Visibility</label>
+                <select name="visibility_choice" x-model="visibility" class="mt-1 block w-full bg-background border border-input rounded-lg p-3">
+                    <option value="private">Private</option>
+                    <option value="unlisted">Unlisted</option>
+                    <option value="public">Public</option>
+                    <option value="schedule">Schedule / Premiere</option>
+                </select>
+                <div x-show="visibility === 'schedule' && scheduledTime" x-transition class="mt-2 text-sm bg-primary/10 text-primary p-3 rounded-lg flex justify-between items-center">
+                    <div>
+                        <span class="font-semibold block">Scheduled for:</span> 
+                        <span x-text="formattedScheduledTime"></span>
+                    </div>
+                    <button @click.prevent="showScheduleModal = true" class="font-semibold hover:underline">Edit</button>
+                </div>
+            </div>
+            
+            <div class="text-right">
+                <button type="submit" class="bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90">
+                    <i class="fa-solid fa-cloud-arrow-up mr-2"></i>Upload to YouTube
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {% include 'partials/_ai_modals.html' %}
+    {% include 'partials/_schedule_modal.html' %}
+</div>
+{% endblock %}

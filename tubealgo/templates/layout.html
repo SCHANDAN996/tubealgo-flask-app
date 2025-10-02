@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TubeAlgo - AI YouTube Growth Tool{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='img/logo.png') }}" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-display { font-family: 'Poppins', sans-serif; }
+        .prose { @apply max-w-none text-muted-foreground; }
+        .prose h1 { @apply text-3xl font-display font-bold mb-4 text-foreground; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 0.5rem; }
+        .prose h2 { @apply text-xl font-display font-bold mt-6 mb-3 text-foreground; }
+        .prose a { @apply text-primary hover:underline; }
+        .prose ul { @apply list-disc list-inside; }
+        .prose strong { @apply text-foreground; }
+    </style>
+    
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-sans antialiased bg-secondary text-foreground">
+    <div class="min-h-screen flex flex-col">
+        <header class="bg-card/80 backdrop-blur-md sticky top-0 z-50 border-b border-border">
+            <nav class="container mx-auto px-4 flex justify-between items-center py-3" x-data="{ open: false, toolsOpen: false }">
+                <a href="{{ url_for('core.home') }}" class="flex items-center space-x-2">
+                    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="TubeAlgo Logo" class="w-10 h-10">
+                    <span class="text-2xl font-bold text-foreground font-display">TubeAlgo</span>
+                </a>
+                
+                <div class="hidden md:flex items-center space-x-1">
+                    {% if current_user.is_authenticated %}
+                        <a href="{{ url_for('dashboard.dashboard') }}" class="px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Dashboard</a>
+                        
+                        <div class="relative" x-data="{ open: false }" @click.away="open = false">
+                            <button @click="open = !open" class="flex items-center px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+                                <span>Tools</span>
+                                <i class="fa-solid fa-chevron-down text-xs ml-2"></i>
+                            </button>
+                            <div x-show="open" x-transition class="absolute mt-2 w-56 bg-card rounded-md shadow-lg z-20 border py-1">
+                                <a href="{{ url_for('tool.video_analyzer') }}" class="block px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-primary">Video Analyzer</a>
+                                <a href="{{ url_for('tool.ai_generator') }}" class="block px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-primary">AI Co-Pilot</a>
+                                <a href="{{ url_for('tool.keyword_research') }}" class="block px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-primary">Keyword Tool</a>
+                                <a href="{{ url_for('competitor.competitors') }}" class="block px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-primary">Competitor Analysis</a>
+                                <hr class="my-1 border-border">
+                                <a href="{{ url_for('manager.index') }}" class="block px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-primary">YT Manager</a>
+                                {% if get_setting('feature_video_upload', True) %}
+                                <a href="{{ url_for('manager.upload') }}" class="block px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-primary">Upload Video</a>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <a href="{{ url_for('core.pricing') }}" class="px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Pricing</a>
+
+                        <a href="{{ url_for('settings.settings') }}" class="px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Settings</a>
+                        <a href="{{ url_for('auth.logout') }}" class="bg-primary text-primary-foreground ml-2 px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">Log Out</a>
+                    {% else %}
+                        <a href="{{ url_for('core.home') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Home</a>
+                        <a href="{{ url_for('core.pricing') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary">Pricing</a>
+                        <a href="{{ url_for('core.contact') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary">Contact</a>
+                        <a href="{{ url_for('auth.login') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary">Login</a>
+                        <a href="{{ url_for('auth.signup') }}" class="bg-primary text-primary-foreground ml-2 px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">Sign Up Free</a>
+                    {% endif %}
+                </div>
+                <div class="md:hidden">
+                    <button @click="open = !open" class="text-foreground focus:outline-none"><i class="fa-solid fa-bars text-xl"></i></button>
+                </div>
+                </nav>
+        </header>
+        <main class="flex-grow">
+            {% block content %}{% endblock %}
+        </main>
+        
+        <footer class="bg-card border-t border-border mt-auto">
+            <div class="container mx-auto px-6 py-8 text-center">
+                <div class="flex justify-center items-center space-x-6">
+                    <a href="{{ url_for('core.about') }}" class="text-sm text-muted-foreground hover:text-primary">About</a>
+                    <a href="{{ url_for('core.contact') }}" class="text-sm text-muted-foreground hover:text-primary">Contact</a>
+                    <a href="{{ url_for('core.privacy') }}" class="text-sm text-muted-foreground hover:text-primary">Privacy Policy</a>
+                    <a href="{{ url_for('core.terms') }}" class="text-sm text-muted-foreground hover:text-primary">Terms of Service</a>
+                </div>
+                <p class="mt-6 text-sm text-muted-foreground">&copy; {{ now().year }} TubeAlgo. All rights reserved.</p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

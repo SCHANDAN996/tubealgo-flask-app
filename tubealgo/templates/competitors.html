@@ -1,0 +1,321 @@
+{% extends "app_layout.html" %}
+
+{% block app_content %}
+<script type="application/json" id="competitors-data">
+    {{ competitors_json | safe }}
+</script>
+
+<div class="max-w-7xl mx-auto" 
+     x-data="competitorPage()">
+
+    <div class="text-center mb-12">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 bg-brand-orange/10 text-brand-orange">
+            <i class="fa-solid fa-users text-3xl"></i>
+        </div>
+        <h1 class="text-4xl font-bold text-foreground font-display">Competitor Analysis</h1>
+        <p class="text-lg text-muted-foreground mt-2">Add and track your competitors to analyze their performance.</p>
+    </div>
+
+    <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm mb-12" @click.away="showSuggestions = false">
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    {% if category.startswith('warning-') %}
+                        <div class="flash-warning hidden" data-channel-id="{{ category.split('-')[1] }}">{{ message }}</div>
+                        <div class="mb-4 p-4 text-sm rounded-lg bg-yellow-500/10 text-yellow-700 border border-yellow-500/20">{{ message }}</div>
+                    {% elif category == 'success' %}
+                         <div class="mb-4 p-4 text-sm rounded-lg bg-primary/10 text-primary">{{ message }}</div>
+                    {% else %}
+                        <div class="mb-4 p-4 text-sm rounded-lg bg-destructive/10 text-destructive">{{ message }}</div>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-bold text-foreground flex items-center">
+                <i class="fa-solid fa-user-plus mr-3 text-brand-green"></i> Add a New Competitor
+            </h2>
+            <div class="text-sm font-semibold text-muted-foreground">
+                Usage: <span class="text-foreground" x-text="competitors.length"></span> / <span class="text-foreground" x-text="limit === -1 ? 'Unlimited' : limit"></span>
+            </div>
+        </div>
+
+        <template x-if="limitReached">
+            <div class="p-4 text-center bg-yellow-400/10 text-yellow-700 rounded-lg border border-yellow-400/20">
+                <p class="font-semibold">You have reached your competitor limit.</p>
+                <p class="text-sm">Please <a href="{{ url_for('core.pricing') }}" class="font-bold underline">upgrade your plan</a> to add more competitors.</p>
+            </div>
+        </template>
+        
+        <form id="add-competitor-form" method="POST" action="{{ url_for('competitor.add_competitor') }}" class="relative" x-show="!limitReached">
+            {{ form.csrf_token }}
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="text" name="channel_url"
+                       class="flex-grow bg-background border border-input rounded-lg px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary"
+                       placeholder="Enter competitor's channel name or URL" required autocomplete="off"
+                       x-model="query"
+                       @input.debounce.300ms="fetchSuggestions()"
+                       @keydown="handleKeydown($event)"
+                       @keydown.escape.window="showSuggestions = false">
+                
+                <input type="hidden" name="channel_id_hidden" x-ref="hiddenIdInput">
+
+                <button type="submit" class="bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors">Add Competitor</button>
+            </div>
+            
+            <div x-show="showSuggestions" x-transition class="absolute top-full mt-2 w-full sm:w-auto sm:min-w-[50%] bg-card border rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto" x-cloak>
+                <div x-show="loading" class="p-4 text-center text-muted-foreground flex items-center justify-center"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading...</div>
+                <template x-if="!loading && suggestions.length > 0">
+                    <ul>
+                        <template x-for="(channel, index) in suggestions" :key="channel.channel_id">
+                            <li @click="selectSuggestion(channel)" class="p-3 flex items-center gap-3 cursor-pointer hover:bg-secondary" :class="{ 'bg-primary/10': activeIndex === index }">
+                                <img :src="channel.thumbnail" class="w-8 h-8 rounded-full">
+                                <span class="text-sm font-medium" x-text="channel.title"></span>
+                            </li>
+                        </template>
+                    </ul>
+                </template>
+                <div x-show="!loading && suggestions.length === 0 && query.length >= 3" class="p-4 text-center text-muted-foreground text-sm">No channels found.</div>
+            </div>
+        </form>
+    </div>
+    
+    <div>
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-foreground font-display">Your Tracked Competitors</h2>
+            <a href="{{ url_for('settings.telegram_settings') }}" class="mt-2 sm:mt-0">
+                {% if current_user.telegram_chat_id %}
+                    <span class="inline-flex items-center gap-2 text-xs font-semibold bg-green-500/10 text-green-700 px-3 py-1.5 rounded-full"><i class="fa-solid fa-bell"></i> Alerts ON</span>
+                {% else %}
+                    <span class="inline-flex items-center gap-2 text-xs font-semibold bg-gray-500/10 text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-500/20"><i class="fa-brands fa-telegram"></i> Get Alerts on Telegram</span>
+                {% endif %}
+            </a>
+        </div>
+        
+        <div class="space-y-8" id="competitor-list">
+            <template x-if="competitors.length > 0">
+                <template x-for="(competitor, index) in competitors" :key="competitor.id">
+                    <div class="bg-card p-4 sm:p-6 rounded-xl border shadow-sm transition-all" :id="`competitor-card-${competitor.channel_id_youtube}`" x-data="competitorCard(competitor)">
+                        <template x-if="isLoading">
+                            {% include 'partials/_competitor_card_loader.html' %}
+                        </template>
+                        <template x-if="error">
+                            <div class="text-center p-8 text-destructive"><i class="fa-solid fa-circle-exclamation text-4xl mb-2"></i><p class="font-semibold" x-text="`Could not load data for ${competitor.channel_title}`"></p><p class="text-sm" x-text="error"></p></div>
+                        </template>
+                        <template x-if="!isLoading && data && video_sets">
+                             <div class="relative">
+                                <div x-show="isRefreshing" x-transition class="absolute inset-0 bg-card/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl"><div class="text-center"><i class="fa-solid fa-spinner fa-spin text-3xl text-primary"></i><p class="mt-2 font-semibold">Fetching new data...</p></div></div>
+                                <div class="flex flex-col sm:flex-row gap-4">
+                                    <img :src="data.details['Thumbnail URL']" alt="Thumbnail" class="w-20 h-20 rounded-full border-4 border-secondary self-center sm:self-start">
+                                    <div class="flex-grow">
+                                        <div class="flex flex-col sm:flex-row justify-between items-start">
+                                            <div class="flex items-center gap-2 text-center sm:text-left w-full sm:w-auto">
+                                                <div>
+                                                    <h3 class="text-2xl font-bold text-foreground" x-text="data.details.Title"></h3>
+                                                    <span class="text-sm font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full mt-1 inline-block" x-text="`🎬 ${data.category || 'N/A'}`"></span>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center gap-1 mt-3 sm:mt-0 flex-shrink-0 w-full sm:w-auto justify-center">
+                                                <button @click="refreshData()" :disabled="isRefreshed || isRefreshing" class="bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed transition-colors"><span x-show="isRefreshing"><i class='fa-solid fa-spinner fa-spin mr-1'></i>Refreshing</span><span x-show="isRefreshed"><i class="fa-solid fa-check mr-1"></i>Refreshed</span><span x-show="!isRefreshing && !isRefreshed"><i class="fa-solid fa-arrows-rotate mr-1"></i>Refresh</span></button>
+                                                <button @click="$dispatch('go-to-analysis', { data: data, competitor: competitor })" class="bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-border">Analysis</button>
+                                                <button @click="$dispatch('confirm-delete', competitor.id)" class="text-destructive/70 hover:text-destructive text-lg px-2"><i class="fa-solid fa-trash-can"></i></button>
+                                                <form method="POST" :action="'{{ url_for('competitor.delete_competitor', competitor_id=0) }}'.replace('0', competitor.id)" :id="`delete-form-${competitor.id}`" class="hidden"><input type="hidden" name="csrf_token" value="{{ form.csrf_token._value() }}"></form>
+                                                <div class="flex flex-col bg-secondary rounded-lg p-0.5 ml-2 border"><button @click="$dispatch('move-competitor', { id: competitor.id, direction: 'up' })" :disabled="index === 0" class="disabled:opacity-25 disabled:cursor-not-allowed text-sm px-1.5 py-0 rounded-md hover:bg-border"><i class="fa-solid fa-chevron-up"></i></button><button @click="$dispatch('move-competitor', { id: competitor.id, direction: 'down' })" :disabled="index === competitors.length - 1" class="disabled:opacity-25 disabled:cursor-not-allowed text-sm px-1.5 py-0 rounded-md hover:bg-border"><i class="fa-solid fa-chevron-down"></i></button></div>
+                                            </div>
+                                        </div>
+                                        <div class="flex justify-center sm:justify-start flex-wrap gap-4 mt-2 text-muted-foreground border-t pt-2"><span><strong class="text-foreground" x-text="Number(data.details.Subscribers).toLocaleString()"></strong> Subs</span><span><strong class="text-foreground" x-text="Number(data.details['Total Views']).toLocaleString()"></strong> Views</span><span><strong class="text-foreground" x-text="Number(data.details['Video Count']).toLocaleString()"></strong> Videos</span></div>
+                                    </div>
+                                </div>
+                                <div class="my-4 flex items-center gap-2 flex-wrap">
+                                    <span class="text-sm font-semibold text-muted-foreground">Sort Videos By:</span>
+                                    <button @click="activeSort = 'date'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeSort === 'date', 'bg-secondary hover:bg-border': activeSort !== 'date' }">Most Recent</button>
+                                    <button @click="activeSort = 'viewCount'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeSort === 'viewCount', 'bg-secondary hover:bg-border': activeSort !== 'viewCount' }">Most Viewed</button>
+                                    <button @click="activeSort = 'views_per_day'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeSort === 'views_per_day', 'bg-secondary hover:bg-border': activeSort !== 'views_per_day' }">Highest Views/Day</button>
+                                    <button @click="activeSort = 'most_comments'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeSort === 'most_comments', 'bg-secondary hover:bg-border': activeSort !== 'most_comments' }">Most Comments</button>
+                                </div>
+                                <div x-show="activeSort === 'date'" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"><template x-for="video in video_sets.date" :key="video.id">{% include 'partials/_video_card_alpine.html' %}</template></div>
+                                <div x-show="activeSort === 'viewCount'" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"><template x-for="video in video_sets.viewCount" :key="video.id">{% include 'partials/_video_card_alpine.html' %}</template></div>
+                                <div x-show="activeSort === 'views_per_day'" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"><template x-for="video in video_sets.views_per_day" :key="video.id">{% include 'partials/_video_card_alpine.html' %}</template></div>
+                                <div x-show="activeSort === 'most_comments'" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"><template x-for="video in video_sets.most_comments" :key="video.id">{% include 'partials/_video_card_alpine.html' %}</template></div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </template>
+            <template x-if="competitors.length === 0">
+                <div class="text-center mt-8 bg-card p-12 rounded-xl border border-dashed"><div class="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 bg-brand-orange/10 text-brand-orange/50"><i class="fa-solid fa-users-slash text-4xl"></i></div><h3 class="mt-4 text-xl font-semibold text-foreground">No competitors added yet.</h3><p class="text-muted-foreground mt-2">Use the form above to add your first competitor and start tracking.</p></div>
+            </template>
+        </div>
+    </div>
+
+    <div x-show="showConfirmModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" x-cloak>
+        <div @click.away="showConfirmModal = false" class="bg-card rounded-xl shadow-xl w-full max-w-sm mx-4 text-center p-6">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-destructive/10"><i class="fa-solid fa-trash-can text-destructive text-xl"></i></div>
+            <div class="mt-4"><h3 class="text-lg leading-6 font-bold text-foreground">Confirm Deletion</h3><div class="mt-2"><p class="text-sm text-muted-foreground">Are you sure you want to remove this competitor? This action cannot be undone.</p></div></div>
+            <div class="mt-6 flex gap-3">
+                <button @click="showConfirmModal = false" type="button" class="flex-1 inline-flex justify-center rounded-lg shadow-sm px-4 py-2 bg-secondary text-base font-medium text-foreground hover:bg-border">Cancel</button>
+                <button @click="proceedWithDelete()" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-destructive text-base font-medium text-white hover:bg-destructive/90">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('competitorPage', () => ({
+            showConfirmModal: false,
+            competitorToDelete: null,
+            competitors: JSON.parse(document.getElementById('competitors-data').textContent),
+            query: '',
+            suggestions: [],
+            loading: false,
+            showSuggestions: false,
+            activeIndex: -1,
+            selectedChannelTitle: '',
+            limit: {{ competitor_limit }},
+            get currentCount() { return this.competitors.length; },
+            get limitReached() { return this.limit !== -1 && this.currentCount >= this.limit; },
+
+            init() {
+                const flash = document.querySelector('.flash-warning');
+                if (flash) {
+                    const channelId = flash.dataset.channelId;
+                    if (channelId) {
+                        this.$nextTick(() => {
+                            const card = document.getElementById(`competitor-card-${channelId}`);
+                            if (card) {
+                                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                card.classList.add('highlight-card');
+                                setTimeout(() => card.classList.remove('highlight-card'), 2500);
+                            }
+                        });
+                    }
+                }
+                this.$watch('query', (newValue) => {
+                    if (newValue !== this.selectedChannelTitle) {
+                        this.$refs.hiddenIdInput.value = '';
+                        this.selectedChannelTitle = '';
+                    }
+                });
+                this.$el.addEventListener('confirm-delete', (event) => this.confirmDelete(event.detail));
+                this.$el.addEventListener('move-competitor', (event) => this.moveCompetitor(event.detail.id, event.detail.direction));
+                this.$el.addEventListener('go-to-analysis', (event) => this.goToDeepAnalysis(event.detail.data, event.detail.competitor));
+            },
+            fetchSuggestions() {
+                if (this.query.length < 3) { this.suggestions = []; this.showSuggestions = false; return; }
+                this.loading = true; this.showSuggestions = true;
+                fetch(`{{ url_for('api.api_search_channels') }}?q=${this.query}`)
+                    .then(res => res.json()).then(data => { this.suggestions = data; this.activeIndex = -1; })
+                    .finally(() => this.loading = false);
+            },
+            selectSuggestion(channel) {
+                this.query = channel.title;
+                this.selectedChannelTitle = channel.title;
+                this.$refs.hiddenIdInput.value = channel.channel_id;
+                this.showSuggestions = false; this.activeIndex = -1;
+            },
+            handleKeydown(event) {
+                if (!this.showSuggestions || this.suggestions.length === 0) return;
+                if (event.key === 'ArrowDown') { event.preventDefault(); this.activeIndex = (this.activeIndex + 1) % this.suggestions.length; } 
+                else if (event.key === 'ArrowUp') { event.preventDefault(); this.activeIndex = (this.activeIndex - 1 + this.suggestions.length) % this.suggestions.length; } 
+                else if (event.key === 'Enter') { event.preventDefault(); if (this.activeIndex !== -1) { this.selectSuggestion(this.suggestions[this.activeIndex]); } }
+            },
+            confirmDelete(competitorId) { this.competitorToDelete = competitorId; this.showConfirmModal = true; },
+            proceedWithDelete() { if (this.competitorToDelete) { document.getElementById(`delete-form-${this.competitorToDelete}`).submit(); } this.showConfirmModal = false; },
+            moveCompetitor(id, direction) {
+                const index = this.competitors.findIndex(c => c.id === id);
+                if (index === -1) return;
+                const otherIndex = direction === 'up' ? index - 1 : index + 1;
+                if (otherIndex < 0 || otherIndex >= this.competitors.length) return;
+                [this.competitors[index], this.competitors[otherIndex]] = [this.competitors[otherIndex], this.competitors[index]];
+                const csrfToken = document.querySelector('form#add-competitor-form input[name=csrf_token]').value;
+                fetch(`{{ url_for('competitor.move_competitor', competitor_id=0, direction='_') }}`.replace('0', id).replace('_', direction), {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
+                }).then(res => res.json()).then(data => {
+                    if (!data.success) {
+                        [this.competitors[index], this.competitors[otherIndex]] = [this.competitors[otherIndex], this.competitors[index]];
+                        alert('Could not update position. Please refresh.');
+                    }
+                });
+            },
+            goToDeepAnalysis(cardData, competitor) {
+                sessionStorage.setItem('deepAnalysisPreload', JSON.stringify(cardData));
+                window.location.href = `{{ url_for('analysis.deep_analysis', channel_id='') }}${competitor.channel_id_youtube}`;
+            }
+        }));
+
+        Alpine.data('competitorCard', (competitor) => ({
+            isLoading: true, isRefreshing: false, isRefreshed: false, error: null, data: null,
+            activeSort: 'date',
+            video_sets: null,
+
+            init() { this.fetchData(); },
+            fetchData() {
+                this.isLoading = true;
+                fetch(`{{ url_for('api.get_competitor_data', competitor_id=0) }}`.replace('0', competitor.id))
+                    .then(res => res.json())
+                    .then(apiData => {
+                        if (apiData.error) { this.error = apiData.error; } 
+                        else { this.data = apiData; this.processVideoSets(); }
+                    })
+                    .catch(() => this.error = 'Failed to load data.')
+                    .finally(() => this.isLoading = false);
+            },
+            refreshData() {
+                this.isRefreshing = true; this.isRefreshed = false;
+                const csrfToken = document.querySelector('form#add-competitor-form input[name=csrf_token]').value;
+                fetch(`{{ url_for('api.refresh_competitor_data', competitor_id=0) }}`.replace('0', competitor.id), { method: 'POST', headers: { 'X-CSRFToken': csrfToken } })
+                    .then(res => res.json())
+                    .then(apiData => {
+                        if (apiData.error) { this.error = apiData.error; } 
+                        else { this.data = apiData; this.processVideoSets(); this.isRefreshed = true; }
+                    })
+                    .catch(() => this.error = 'Failed to refresh data.')
+                    .finally(() => this.isRefreshing = false);
+            },
+            processVideoSets() {
+                const videosByDate = this.data.recent_videos_data.videos || [];
+                const videosByViews = this.data.most_viewed_videos_data.videos || [];
+                
+                const allVideosDict = {};
+                [...videosByDate, ...videosByViews].forEach(v => { if (v && v.id) allVideosDict[v.id] = v; });
+
+                const processedVideos = Object.values(allVideosDict).map(video => {
+                    if (video && video.upload_date) {
+                        const uploadDate = new Date(video.upload_date);
+                        const daysSinceUpload = (new Date() - uploadDate) / (1000 * 3600 * 24);
+                        video.views_per_day = daysSinceUpload > 0 ? (video.view_count / daysSinceUpload) : video.view_count;
+                    } else if (video) { video.views_per_day = 0; }
+                    return video;
+                }).filter(Boolean);
+
+                this.video_sets = {
+                    date: [...processedVideos].sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date)).slice(0, 5),
+                    viewCount: [...processedVideos].sort((a, b) => b.view_count - a.view_count).slice(0, 5),
+                    views_per_day: [...processedVideos].sort((a, b) => (b.views_per_day || 0) - (a.views_per_day || 0)).slice(0, 5),
+                    most_comments: [...processedVideos].sort((a, b) => b.comment_count - a.comment_count).slice(0, 5)
+                };
+            }
+        }));
+    });
+
+    function formatRelativeTimeAlpine(isoDate) {
+        if (!isoDate) return '';
+        const dt = new Date(isoDate); const now = new Date(); const diff = (now.getTime() - dt.getTime()) / 1000;
+        if (diff < 60) return 'just now'; const minutes = Math.floor(diff / 60); if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`; const days = Math.floor(hours / 24); if (days < 30) return `${days} day${days > 1 ? 's' : ''} ago`; const months = Math.floor(days / 30); if (months < 12) return `${months} month${months > 1 ? 's' : ''} ago`; const years = Math.floor(months / 12); return `${years} year${years > 1 ? 's' : ''} ago`;
+    }
+</script>
+
+<style>
+.highlight-card {
+    transition: all 0.5s ease-in-out;
+    border-color: #f59e0b !important; /* brand-yellow */
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+}
+.flash-warning {
+    display: none;
+}
+</style>
+{% endblock %}

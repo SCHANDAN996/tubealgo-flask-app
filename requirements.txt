@@ -1,0 +1,28 @@
+# Filepath: requirements.txt
+Flask
+Flask-SQLAlchemy
+Flask-Login
+Flask-WTF
+# psycopg2-binary
+mysql-connector-python
+gunicorn
+python-dotenv
+google-api-python-client
+werkzeug
+email-validator
+google-auth-oauthlib
+requests
+openai
+setuptools
+razorpay
+Flask-Limiter
+openpyxl
+textblob
+python-docx
+APScheduler
+SQLAlchemy
+# flask_sqlalchemy
+# flask_login
+# dotenv
+# flask_limiter
+pytz

@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block title %}Terms of Service - TubeAlgo{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-16">
+    <div class="max-w-4xl mx-auto bg-card p-8 md:p-12 rounded-xl border shadow-sm">
+        <article class="prose">
+            <h1>Terms of Service</h1>
+            <p><strong>Last updated:</strong> {{ now().strftime('%B %d, %Y') }}</p>
+            <p>Welcome to TubeAlgo. By accessing or using our service, you agree to be bound by these terms. If you disagree with any part of the terms, then you may not access the service.</p>
+
+            <h2>User Accounts</h2>
+            <p>When you create an account with us, you must provide information that is accurate and complete. You are responsible for safeguarding the password that you use to access the service and for any activities or actions under your password.</p>
+
+            <h2>Subscriptions</h2>
+            <p>Some parts of the service are billed on a subscription basis. You will be billed in advance on a recurring and periodic basis (such as monthly or annually), depending on the subscription plan you select.</p>
+
+            <h2>Termination</h2>
+            <p>We may terminate or suspend your account immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.</p>
+
+            <h2>Changes to Terms</h2>
+            <p>We reserve the right, at our sole discretion, to modify or replace these Terms at any time. We will try to provide at least 30 days' notice prior to any new terms taking effect.</p>
+            
+            <h2>Contact Us</h2>
+            <p>If you have any questions about these Terms, please contact us at <a href="mailto:tubealgoofficial@gmail.com">tubealgoofficial@gmail.com</a>.</p>
+        </article>
+    </div>
+</div>
+{% endblock %}

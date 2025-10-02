@@ -1,0 +1,75 @@
+{% extends "app_layout.html" %}
+
+{% block app_content %}
+<div class="max-w-4xl mx-auto">
+    <div class="text-center mb-10">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 bg-brand-purple/10 text-brand-purple">
+            <i class="fa-solid fa-wand-magic-sparkles text-3xl"></i>
+        </div>
+        <h1 class="text-4xl font-bold text-foreground font-display">AI Content Co-Pilot</h1>
+        <p class="text-lg text-muted-foreground mt-2">Generate titles, tags, and descriptions for your next video.</p>
+    </div>
+
+    <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm">
+        <form method="POST" id="generator-form">
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">1</span>
+                    <label for="topic" class="text-lg font-semibold text-foreground">Enter Your Video Topic</label>
+                </div>
+                <div class="pl-11">
+                    <textarea name="topic" id="topic" rows="3" class="w-full bg-background border border-input rounded-lg p-3 text-base focus:ring-2 focus:ring-primary focus:outline-none transition-shadow" placeholder="e.g., How to make restaurant-style paneer butter masala at home" required>{{ topic or '' }}</textarea>
+                    <button type="submit" class="mt-4 inline-flex items-center justify-center bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors shadow-sm">
+                        <i class="fa-solid fa-stars mr-2"></i>
+                        <span>Generate Titles & Tags</span>
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        {% if results and 'error' not in results %}
+        <hr class="my-8 border-border">
+        <div>
+            <div class="flex items-center gap-3 mb-4">
+                <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">2</span>
+                <h2 class="text-lg font-semibold text-foreground">Generated Results</h2>
+            </div>
+            <div class="pl-11 space-y-6">
+                <div>
+                    <h3 class="font-semibold text-foreground mb-3">Generated Titles</h3>
+                    <ul class="space-y-2">
+                        {% for title in results.titles %}
+                        <li class="bg-secondary p-3 rounded-lg text-muted-foreground">{{ title }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="font-semibold text-foreground">Generated Tags</h3>
+                        <button type="button" class="copy-btn bg-secondary hover:bg-border text-xs font-medium px-3 py-1 rounded-full">
+                            <i class="fa-regular fa-copy mr-1"></i> Copy All
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap gap-2" data-copy-text="{{ results.tags|join(', ') }}">
+                        {% for tag in results.tags %}
+                        <span class="bg-secondary text-muted-foreground text-sm font-medium px-3 py-1 rounded-full">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.querySelector('.copy-btn')?.addEventListener('click', (buttonEl) => {
+    const textToCopy = buttonEl.target.closest('div').nextElementSibling.dataset.copyText;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        const originalText = buttonEl.target.innerHTML;
+        buttonEl.target.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copied!';
+        setTimeout(() => { buttonEl.target.innerHTML = originalText; }, 2000);
+    });
+});
+</script>
+{% endblock %}
