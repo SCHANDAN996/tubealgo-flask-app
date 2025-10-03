@@ -7,7 +7,7 @@ from tubealgo.models import User, SubscriptionPlan, Payment, get_config_value
 import time
 
 # Cashfree SDK को नए और सही तरीके से इम्पोर्ट करें
-from cashfree_pg.api_client import APIClient
+from cashfree_pg.api_client import ApiClient # <-- THIS IS THE FIX
 from cashfree_pg.api.orders import Orders
 from cashfree_pg.exceptions import ApiException
 from cashfree_pg.models.create_order_request import CreateOrderRequest
@@ -21,7 +21,7 @@ def get_cashfree_client():
     is_prod = get_config_value('CASHFREE_ENV') == 'PROD'
     host = "https://api.cashfree.com/pg" if is_prod else "https://sandbox.cashfree.com/pg"
     
-    client = APIClient(
+    client = ApiClient(
         client_id=get_config_value('CASHFREE_APP_ID'),
         client_secret=get_config_value('CASHFREE_SECRET_KEY'),
         environment=host
