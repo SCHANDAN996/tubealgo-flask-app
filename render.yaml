@@ -1,19 +1,21 @@
+# Filepath: render.yaml
+
 services:
   - type: web
     name: tubealgo
     env: python
-    plan: free # आप इसे अपनी जरूरत के हिसाब से बदल सकते हैं (e.g., starter)
+    plan: free
 
-    # Build command Render को आपकी स्क्रिप्ट चलाने के लिए कहता है
+    # Build command tells Render to execute your script
     buildCommand: "./build.sh"
 
-    # Start command Gunicorn के साथ आपके एप्लीकेशन को चलाता है
+    # Start command runs your application with Gunicorn
     startCommand: "gunicorn run:app"
 
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: tubealgo-database # सुनिश्चित करें कि यह Render पर आपके डेटाबेस के नाम से मेल खाता हो
+          name: tubealgo-database # Make sure this matches your database name on Render
           property: connectionString
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -22,7 +24,6 @@ services:
       - key: SECRET_KEY
         generateValue: true
       
-      # --- API Keys ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -33,21 +34,11 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: MEASUREMENT_ID
-        sync: false
-
-      # --- Payment Gateway Keys ---
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
         sync: false
-      
-      # --- Cashfree Keys (यहाँ जोड़ा गया है) ---
-      - key: CASHFREE_APP_ID
+      - key: MEASUREMENT_ID
         sync: false
-      - key: CASHFREE_SECRET_KEY
-        sync: false
-      - key: CASHFREE_ENV
-        sync: false # Render डैशबोर्ड में इसकी वैल्यू 'TEST' या 'PROD' सेट करें
 
     autoDeploy: true

@@ -1,3 +1,4 @@
+# Filepath: tubealgo/models.py
 import os
 import json
 from flask_login import UserMixin
@@ -25,6 +26,8 @@ def log_system_event(message, log_type='INFO', details=None):
         db.session.add(log_entry)
         db.session.commit()
 
+        # === यहाँ बदलाव किया गया है ===
+        # अब यह QUOTA_EXCEEDED और ERROR दोनों पर अलर्ट भेजेगा
         CRITICAL_LOG_TYPES = ['QUOTA_EXCEEDED', 'ERROR']
         if log_type in CRITICAL_LOG_TYPES:
             admin_chat_id = get_setting('ADMIN_TELEGRAM_CHAT_ID')
@@ -38,7 +41,7 @@ def log_system_event(message, log_type='INFO', details=None):
                 )
                 if details:
                     details_str = json.dumps(details, indent=2) if isinstance(details, dict) else str(details)
-                    telegram_message += f"*Details:* ```\n{details_str[:500]}\n```"
+                    telegram_message += f"*Details:* ```\n{details_str[:500]}\n```" # Details के पहले 500 अक्षर
                 
                 send_telegram_message(admin_chat_id, telegram_message)
 
@@ -53,9 +56,11 @@ def is_admin_telegram_user(chat_id):
         return True
     return False
 
+# ... (बाकी सभी मॉडल्स और फंक्शन्स वैसे ही रहेंगे)
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
+    # ... (rest of the User model)
     password_hash = db.Column(db.String(256), nullable=False)
     telegram_chat_id = db.Column(db.String(100), unique=True, nullable=True)
     default_channel_name = db.Column(db.String(100), nullable=True)
@@ -81,7 +86,6 @@ class User(UserMixin, db.Model):
     channel = db.relationship('YouTubeChannel', backref='user', uselist=False, cascade="all, delete-orphan")
     competitors = db.relationship('Competitor', backref='user', lazy='dynamic', cascade="all, delete-orphan")
     search_history = db.relationship('SearchHistory', backref='user', lazy='dynamic', cascade="all, delete-orphan")
-    payments = db.relationship('Payment', backref='user')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -130,23 +134,20 @@ class Coupon(db.Model):
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    
-    # --- यहाँ बदलाव किया गया है (razorpay_* को बदला गया है) ---
-    gateway_name = db.Column(db.String(50), nullable=False, default='cashfree')
-    gateway_payment_id = db.Column(db.String(100), unique=True, nullable=False)
-    gateway_order_id = db.Column(db.String(100), unique=True, nullable=False)
-    # --- यहाँ तक ---
-
+    razorpay_payment_id = db.Column(db.String(100), unique=True, nullable=False)
+    razorpay_order_id = db.Column(db.String(100), unique=True, nullable=False)
     amount = db.Column(db.Integer, nullable=False) # Stored in paise
     currency = db.Column(db.String(10), nullable=False, default='INR')
     plan_id = db.Column(db.String(50), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='captured')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref='payments')
 
 class APIKeyStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    key_identifier = db.Column(db.String(20), unique=True, nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='active')
+    key_identifier = db.Column(db.String(20), unique=True, nullable=False) # e.g., "AIzaS...h28"
+    status = db.Column(db.String(20), nullable=False, default='active') # 'active' or 'exhausted'
     last_failure_at = db.Column(db.DateTime, nullable=True)
 
 class SubscriptionPlan(db.Model):

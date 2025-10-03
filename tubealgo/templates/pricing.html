@@ -74,40 +74,40 @@ document.addEventListener('DOMContentLoaded', function() {
             
             {% if current_user.is_authenticated %}
                 const planId = this.dataset.planId;
-                const originalButtonText = this.innerHTML;
                 this.innerHTML = 'Processing...';
                 this.disabled = true;
 
                 try {
-                    // 1. Backend पर ऑर्डर बनाएँ
-                    const response = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
+                    // 1. Create Order on your backend
+                    const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ plan: planId })
                     });
 
-                    if (!response.ok) {
-                        const errorData = await response.json();
+                    if (!orderResponse.ok) {
+                        const errorData = await orderResponse.json();
                         throw new Error(errorData.error || 'Could not create order.');
                     }
-                    const orderData = await response.json();
+                    const orderData = await orderResponse.json();
 
-                    // 2. Cashfree का पेमेंट पेज खोलें
-                    cashfree.checkout({
-                        paymentSessionId: orderData.payment_session_id
-                    });
+                    // 2. Initiate Cashfree Checkout
+                    let checkoutOptions = {
+                        paymentSessionId: orderData.payment_session_id,
+                        orderId: orderData.order_id,
+                        returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
+                    }
                     
-                    // Cashfree पेज पर रीडायरेक्ट कर देगा, इसलिए बटन को वापस ठीक करने की जरूरत नहीं है
-                    // अगर कोई एरर आता है, तो catch ब्लॉक उसे हैंडल कर लेगा।
+                    cashfree.checkout(checkoutOptions);
 
                 } catch (error) {
                     console.error('Payment Error:', error);
-                    alert('Could not initiate payment. Please try again or contact support.');
-                    this.innerHTML = originalButtonText; // बटन को वापस ठीक करें
+                    alert('Could not initiate payment. Please try again.');
+                    this.innerHTML = 'Upgrade Now';
                     this.disabled = false;
                 }
             {% else %}
-                // अगर यूज़र लॉग-इन नहीं है, तो उसे signup पेज पर भेजें
+                // If user is not logged in, redirect to signup
                 window.location.href = "{{ url_for('auth.signup') }}";
             {% endif %}
         });

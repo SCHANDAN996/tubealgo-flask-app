@@ -1,3 +1,5 @@
+# Filepath: tubealgo/routes/payment_routes.py
+
 from flask import Blueprint, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
 from tubealgo import db
@@ -39,21 +41,16 @@ def create_cashfree_order():
         client = get_cashfree_client()
         order_api = Orders(client)
         
-        # <<!>> जरूरी सुधार: यूज़र से फ़ोन नंबर लें। अभी के लिए डमी नंबर इस्तेमाल कर रहे हैं।
-        # आपको इसे User मॉडल में जोड़ना चाहिए और रजिस्ट्रेशन या प्रोफाइल पेज पर पूछना चाहिए।
-        customer_phone = getattr(current_user, 'phone_number', "9999999999") or "9999999999"
-
         order_request = CreateOrderRequest(
-            order_id=f"tubealgo-order-{current_user.id}-{int(time.time())}",
+            order_id=f"tubealgo-order-{int(time.time())}",
             order_amount=float(plan.price / 100),
             order_currency="INR",
             customer_details=CustomerDetails(
                 customer_id=str(current_user.id),
                 customer_email=current_user.email,
-                customer_phone=customer_phone
+                customer_phone="9999999999"  # यह एक आवश्यक फ़ील्ड है
             ),
             order_meta=OrderMeta(
-                # Redirect URL जब पेमेंट हो जाए
                 return_url=url_for('payment.cashfree_verification', order_id='{order_id}', _external=True)
             ),
             order_tags={
@@ -61,10 +58,8 @@ def create_cashfree_order():
             }
         )
         
-        # Cashfree API को कॉल करें
         api_response = order_api.create_order(x_api_version="2023-08-01", create_order_request=order_request)
         
-        # ये दो चीज़ें frontend को भेजनी हैं
         return jsonify({
             'payment_session_id': api_response.payment_session_id,
             'order_id': api_response.order_id
@@ -89,27 +84,22 @@ def cashfree_verification():
         client = get_cashfree_client()
         order_api = Orders(client)
         
-        # Cashfree से ऑर्डर की डिटेल्स वेरिफाई करें
         api_response = order_api.get_order(x_api_version="2023-08-01", order_id=order_id)
 
         if api_response.order_status == "PAID":
             plan_id = api_response.order_tags.get('plan', 'creator')
             
-            # चेक करें कि यह पेमेंट पहले से प्रोसेस तो नहीं हुआ
-            existing_payment = Payment.query.filter_by(gateway_order_id=order_id).first()
+            existing_payment = Payment.query.filter_by(razorpay_order_id=order_id).first()
             if existing_payment:
                 flash("This payment has already been processed.", "info")
                 return redirect(url_for('dashboard.dashboard'))
 
-            # यूज़र का प्लान अपग्रेड करें
             current_user.subscription_plan = plan_id
             
-            # पेमेंट को डेटाबेस में सेव करें
             new_payment = Payment(
                 user_id=current_user.id,
-                gateway_name='cashfree', # गेटवे का नाम
-                gateway_payment_id=api_response.cf_order_id,
-                gateway_order_id=order_id,
+                razorpay_payment_id=api_response.cf_order_id,
+                razorpay_order_id=order_id,
                 amount=int(api_response.order_amount * 100),
                 currency=api_response.order_currency,
                 plan_id=plan_id,
