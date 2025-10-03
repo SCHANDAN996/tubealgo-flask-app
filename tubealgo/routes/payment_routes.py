@@ -6,21 +6,19 @@ from tubealgo import db
 from tubealgo.models import User, SubscriptionPlan, Payment, get_config_value
 import time
 
-# === यहाँ बदलाव किया गया है (नए वर्शन के हिसाब से इम्पोर्ट) ===
-from cashfree_pg import CFCreateOrderRequest, CFCustomerDetails, CFOrderMeta, Cashfree
+# === यहाँ बदलाव किया गया है (एरर के सुझाव के अनुसार) ===
+# 'CF' प्रीफिक्स को क्लास के नामों से हटा दिया गया है
+from cashfree_pg import CreateOrderRequest, CustomerDetails, OrderMeta, Cashfree
 from cashfree_pg.api.orders import Orders
 from cashfree_pg.exceptions import ApiException
 
 payment_bp = Blueprint('payment', __name__)
 
-# Cashfree क्लाइंट को इनिशियलाइज़ करें
-# X_CLIENT_ID और X_CLIENT_SECRET को सीधे यहाँ कॉन्फ़िगर करने की ज़रूरत नहीं है,
-# SDK उन्हें एनवायरनमेंट से उठा सकता है यदि सही से सेट हो।
-# हम उन्हें हर कॉल में स्पष्ट रूप से पास करेंगे ताकि कोई कन्फ्यूजन न हो।
-
 def get_cashfree_config():
     """कैशफ्री कॉन्फ़िगरेशन प्राप्त करने के लिए एक हेल्पर फ़ंक्शन"""
-    config = Cashfree.production() if get_config_value('CASHFREE_ENV') == 'PROD' else Cashfree.sandbox()
+    # X_ENVIRONMENT को सीधे सेट करने की बजाय कॉन्फ़िगरेशन ऑब्जेक्ट का उपयोग करें
+    is_prod = get_config_value('CASHFREE_ENV') == 'PROD'
+    config = Cashfree.production() if is_prod else Cashfree.sandbox()
     config.client_id = get_config_value('CASHFREE_APP_ID')
     config.client_secret = get_config_value('CASHFREE_SECRET_KEY')
     return config
@@ -38,16 +36,17 @@ def create_cashfree_order():
         config = get_cashfree_config()
         order_api = Orders(config)
         
-        # === यहाँ भी कोड को नए वर्शन के हिसाब से अपडेट किया गया है ===
-        create_order_request = CFCreateOrderRequest(
+        # === यहाँ भी क्लास के नामों को ठीक किया गया है ===
+        create_order_request = CreateOrderRequest(
             order_id=f"tubealgo-order-{int(time.time())}",
             order_amount=float(plan.price / 100),
             order_currency="INR",
-            customer_details=CFCustomerDetails(
+            customer_details=CustomerDetails(
                 customer_id=str(current_user.id),
-                customer_email=current_user.email
+                customer_email=current_user.email,
+                customer_phone="9999999999"  # एक डमी फ़ोन नंबर जोड़ना अक्सर ज़रूरी होता है
             ),
-            order_meta=CFOrderMeta(
+            order_meta=OrderMeta(
                 return_url=url_for('payment.cashfree_verification', order_id='{order_id}', _external=True)
             ),
             order_tags={
@@ -55,7 +54,8 @@ def create_cashfree_order():
             }
         )
         
-        api_response = order_api.create_order(x_api_version="2022-09-01", cf_create_order_request=create_order_request)
+        # API कॉल को नए SDK वर्शन के हिसाब से अपडेट किया गया
+        api_response = order_api.create_order(x_api_version="2023-08-01", create_order_request=create_order_request)
         
         return jsonify({
             'payment_session_id': api_response.payment_session_id,
@@ -78,13 +78,11 @@ def cashfree_verification():
         config = get_cashfree_config()
         order_api = Orders(config)
         
-        # === यहाँ भी कोड को नए वर्शन के हिसाब से अपडेट किया गया है ===
-        api_response = order_api.get_order(x_api_version="2022-09-01", order_id=order_id)
+        api_response = order_api.get_order(x_api_version="2023-08-01", order_id=order_id)
 
         if api_response.order_status == "PAID":
             plan_id = api_response.order_tags.get('plan')
             if not plan_id:
-                # अगर टैग्स में प्लान नहीं मिला, तो राशि से अनुमान लगाएं
                 paid_amount = int(api_response.order_amount * 100)
                 matching_plan = SubscriptionPlan.query.filter_by(price=paid_amount).first()
                 plan_id = matching_plan.plan_id if matching_plan else 'creator'
@@ -96,9 +94,10 @@ def cashfree_verification():
 
             current_user.subscription_plan = plan_id
             
+            # razorpay_payment_id की जगह cf_order_id का उपयोग करें
             new_payment = Payment(
                 user_id=current_user.id,
-                razorpay_payment_id=api_response.cf_order_id, # Using cf_order_id
+                razorpay_payment_id=api_response.cf_order_id, 
                 razorpay_order_id=order_id,
                 amount=int(api_response.order_amount * 100),
                 currency=api_response.order_currency,
