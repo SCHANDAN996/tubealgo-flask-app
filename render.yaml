@@ -49,6 +49,6 @@ services:
       - key: CASHFREE_SECRET_KEY
         sync: false
       - key: CASHFREE_ENV
-        value: "TEST" # या "PROD" जब आप लाइव होंगे
+        value: "PROD" # या "PROD" जब आप लाइव होंगे
 
     autoDeploy: true
