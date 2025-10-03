@@ -1,16 +1,56 @@
 {% extends "layout.html" %}
+{% block title %}{{ title or 'TubeAlgo - AI YouTube Analytics & Strategy Tool' }}{% endblock %}
 {% block content %}
-<section class="hero-gradient text-primary-foreground py-20 md:py-32">
+<section class="bg-card text-foreground py-20 md:py-24">
     <div class="container mx-auto px-4 text-center">
-        <h1 class="text-4xl md:text-6xl font-extrabold mb-6 leading-tight font-display">Unlock Your YouTube Growth. 🚀</h1>
-        <p class="text-lg md:text-xl max-w-3xl mx-auto mb-10 opacity-90">Get the AI-powered playbook to analyze competitors, discover viral ideas, and grow your channel faster.</p>
+        <h1 class="text-4xl md:text-6xl font-extrabold mb-6 leading-tight font-display">
+            AI-Powered Insights for Your YouTube Channel
+        </h1>
+        <p class="text-lg md:text-xl max-w-3xl mx-auto mb-10 text-muted-foreground">
+            TubeAlgo is an analytics tool that helps you make data-driven decisions. Analyze competitors, discover content ideas, and optimize your SEO strategy.
+        </p>
         <form action="{{ url_for('core.instant_analysis') }}" method="POST" class="max-w-xl mx-auto">
             <div class="flex flex-col sm:flex-row gap-2">
-                <input type="text" name="channel_url" class="flex-grow bg-white/20 border border-white/30 text-white placeholder-white/70 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-white" placeholder="Enter any YouTube Channel URL or @handle" required>
-                <button type="submit" class="bg-white text-primary px-6 py-3 rounded-lg font-semibold hover:bg-slate-200 transition-colors shadow-lg">Analyze Any Channel for Free</button>
+                <input type="text" name="channel_url" class="flex-grow bg-background border border-input text-foreground placeholder-muted-foreground rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Enter any YouTube Channel URL or @handle" required>
+                <button type="submit" class="bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors shadow-lg">Analyze for Free</button>
             </div>
-             <p class="text-sm mt-3 text-white/80">Instant insights. No signup required.</p>
+             <p class="text-sm mt-3 text-muted-foreground">Instant channel overview. No signup required.</p>
         </form>
+    </div>
+</section>
+
+<section class="py-20 md:py-24 bg-secondary">
+    <div class="container mx-auto px-4">
+        <div class="text-center max-w-3xl mx-auto mb-12">
+            <h2 class="text-3xl md:text-4xl font-bold font-display">How TubeAlgo Helps You Succeed</h2>
+            <p class="text-lg text-muted-foreground mt-4">We provide the data, you create the great content. Our platform is a strategy tool, not a shortcut.</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="bg-card p-6 rounded-xl border">
+                <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 bg-brand-orange/10 text-brand-orange">
+                    <i class="fa-solid fa-users text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-lg mb-2">Competitor Analysis</h3>
+                <p class="text-muted-foreground text-sm">Track your competitors' performance, analyze their top videos, and understand their content strategy to find opportunities for your own channel.</p>
+            </div>
+            <div class="bg-card p-6 rounded-xl border">
+                <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 bg-brand-purple/10 text-brand-purple">
+                    <i class="fa-solid fa-wand-magic-sparkles text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-lg mb-2">AI Content Ideas</h3>
+                <p class="text-muted-foreground text-sm">Get AI-powered suggestions for video titles, tags, and descriptions based on topics that are currently performing well in your niche.</p>
+            </div>
+            <div class="bg-card p-6 rounded-xl border">
+                <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg mb-4 bg-brand-blue/10 text-brand-blue">
+                    <i class="fa-solid fa-key text-2xl"></i>
+                </div>
+                <h3 class="font-bold text-lg mb-2">Video SEO Tools</h3>
+                <p class="text-muted-foreground text-sm">Find relevant keywords and optimize your video metadata to improve your chances of ranking higher in YouTube search results.</p>
+            </div>
+        </div>
+        <div class="mt-12 text-center p-4 bg-amber-500/10 text-amber-700 rounded-lg border border-amber-500/20 max-w-4xl mx-auto">
+            <p class="font-semibold">Please Note: TubeAlgo is an analytics and strategy tool. We DO NOT sell subscribers, views, likes, or any form of artificial engagement. Our platform operates in full compliance with YouTube's Terms of Service.</p>
+        </div>
     </div>
 </section>
 {% endblock %}
