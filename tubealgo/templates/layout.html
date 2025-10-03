@@ -82,14 +82,17 @@
         </main>
         
         <footer class="bg-card border-t border-border mt-auto">
-            <div class="container mx-auto px-6 py-8 text-center">
-                <div class="flex justify-center items-center space-x-6">
+            <div class="container mx-auto px-6 py-8">
+                <div class="flex justify-center flex-wrap gap-x-6 gap-y-2">
                     <a href="{{ url_for('core.about') }}" class="text-sm text-muted-foreground hover:text-primary">About</a>
                     <a href="{{ url_for('core.contact') }}" class="text-sm text-muted-foreground hover:text-primary">Contact</a>
                     <a href="{{ url_for('core.privacy') }}" class="text-sm text-muted-foreground hover:text-primary">Privacy Policy</a>
                     <a href="{{ url_for('core.terms') }}" class="text-sm text-muted-foreground hover:text-primary">Terms of Service</a>
+                    <a href="{{ url_for('core.refund_policy') }}" class="text-sm text-muted-foreground hover:text-primary">Refund Policy</a>
+                    <a href="{{ url_for('core.shipping_policy') }}" class="text-sm text-muted-foreground hover:text-primary">Shipping Policy</a>
+                    <a href="{{ url_for('core.data_disclaimer') }}" class="text-sm text-muted-foreground hover:text-primary">Data Disclaimer</a>
                 </div>
-                <p class="mt-6 text-sm text-muted-foreground">&copy; {{ now().year }} TubeAlgo. All rights reserved.</p>
+                <p class="mt-6 text-center text-sm text-muted-foreground">&copy; {{ now().year }} TubeAlgo. All rights reserved.</p>
             </div>
         </footer>
     </div>
