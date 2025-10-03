@@ -50,9 +50,9 @@
                 <button 
                     data-plan-id="{{ plan.plan_id }}"
                     class="payment-btn mt-8 w-full py-3 rounded-lg font-semibold transition-colors 
-                           {% if plan.plan_id == 'creator' %}bg-primary text-primary-foreground hover:bg-primary/90
-                           {% else %}bg-secondary text-secondary-foreground hover:bg-border
-                           {% endif %}">
+                            {% if plan.plan_id == 'creator' %}bg-primary text-primary-foreground hover:bg-primary/90
+                            {% else %}bg-secondary text-secondary-foreground hover:bg-border
+                            {% endif %}">
                     Upgrade Now
                 </button>
             </div>
@@ -62,9 +62,11 @@
     </div>
 </div>
 
+<script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const paymentButtons = document.querySelectorAll('.payment-btn');
+    const cashfree = new Cashfree();
 
     paymentButtons.forEach(button => {
         button.addEventListener('click', async function(e) {
@@ -75,77 +77,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.innerHTML = 'Processing...';
                 this.disabled = true;
 
-                // 1. Create Order
-                const orderResponse = await fetch("{{ url_for('payment.create_order') }}", {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ plan: planId })
-                });
+                try {
+                    // 1. Create Order on your backend
+                    const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ plan: planId })
+                    });
 
-                if (!orderResponse.ok) {
-                    alert('Could not create order. Please try again.');
+                    if (!orderResponse.ok) {
+                        const errorData = await orderResponse.json();
+                        throw new Error(errorData.error || 'Could not create order.');
+                    }
+                    const orderData = await orderResponse.json();
+
+                    // 2. Initiate Cashfree Checkout
+                    let checkoutOptions = {
+                        paymentSessionId: orderData.payment_session_id,
+                        orderId: orderData.order_id,
+                        returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
+                    }
+                    
+                    cashfree.checkout(checkoutOptions);
+
+                } catch (error) {
+                    console.error('Payment Error:', error);
+                    alert('Could not initiate payment. Please try again.');
                     this.innerHTML = 'Upgrade Now';
                     this.disabled = false;
-                    return;
                 }
-                const orderData = await orderResponse.json();
-
-                // 2. Configure and Open Razorpay
-                const options = {
-                    key: orderData.key_id,
-                    amount: orderData.amount,
-                    currency: orderData.currency,
-                    name: orderData.name,
-                    description: orderData.description,
-                    order_id: orderData.order_id,
-                    handler: async function (response) {
-                        // 3. Verify Payment
-                        const verifyResponse = await fetch("{{ url_for('payment.verify_payment') }}", {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                razorpay_payment_id: response.razorpay_payment_id,
-                                razorpay_order_id: response.razorpay_order_id,
-                                razorpay_signature: response.razorpay_signature
-                            })
-                        });
-                        
-                        const verifyData = await verifyResponse.json();
-                        if (verifyData.status === 'success') {
-                            alert('Payment Successful! Your plan has been upgraded.');
-                            window.location.href = "{{ url_for('dashboard.dashboard') }}";
-                        } else {
-                            alert('Payment verification failed. Please contact support.');
-                        }
-                    },
-                    prefill: {
-                        name: "",
-                        email: orderData.prefill.email,
-                        contact: ""
-                    },
-                    notes: {
-                        address: "TubeAlgo Purchase"
-                    },
-                    theme: {
-                        color: "#7e22ce"
-                    },
-                    modal: {
-                        ondismiss: function() {
-                            // This function is called when user closes the popup
-                            button.innerHTML = 'Upgrade Now';
-                            button.disabled = false;
-                        }
-                    }
-                };
-                
-                const rzp1 = new Razorpay(options);
-                rzp1.on('payment.failed', function (response){
-                    alert("Payment Failed: " + response.error.description);
-                    button.innerHTML = 'Upgrade Now';
-                    button.disabled = false;
-                });
-                rzp1.open();
-
             {% else %}
                 // If user is not logged in, redirect to signup
                 window.location.href = "{{ url_for('auth.signup') }}";
