@@ -1,88 +1,109 @@
-import razorpay
-from flask import Blueprint, request, jsonify, redirect, url_for, flash
+# Filepath: tubealgo/routes/payment_routes.py
+
+from flask import Blueprint, request, jsonify, redirect, url_for, flash, render_template
 from flask_login import login_required, current_user
 from tubealgo import db
 from tubealgo.models import User, SubscriptionPlan, Payment, get_config_value
+import time
+
+# Cashfree SDK को इम्पोर्ट करें
+from cashfree_pg.api_client import Cashfree
+from cashfree_pg.api.orders_api import OrdersApi
+from cashfree_pg.exceptions import ApiException
+from cashfree_pg.models.create_order_request import CreateOrderRequest
+from cashfree_pg.models.customer_details import CustomerDetails
 
 payment_bp = Blueprint('payment', __name__)
 
-@payment_bp.route('/create-order', methods=['POST'])
+# Cashfree क्लाइंट को इनिशियलाइज़ करें
+Cashfree.X_CLIENT_ID = get_config_value('CASHFREE_APP_ID')
+Cashfree.X_CLIENT_SECRET = get_config_value('CASHFREE_SECRET_KEY')
+Cashfree.X_API_VERSION = "2022-09-01"
+# 'TEST' या 'PROD' मोड सेट करें (PROD के लिए इसे बदलें)
+# अभी के लिए हम 'TEST' का उपयोग करेंगे
+Cashfree.X_ENVIRONMENT = Cashfree.SANDBOX 
+# जब आप लाइव होंगे, तो इसे Cashfree.PRODUCTION में बदलें
+
+@payment_bp.route('/create-cashfree-order', methods=['POST'])
 @login_required
-def create_order():
+def create_cashfree_order():
     plan_id_from_request = request.json.get('plan')
     plan = SubscriptionPlan.query.filter_by(plan_id=plan_id_from_request).first()
 
     if not plan:
         return jsonify({'error': 'Invalid plan selected.'}), 400
 
-    amount = plan.price
-    plan_name = plan.name
-    
-    client = razorpay.Client(auth=(get_config_value('RAZORPAY_KEY_ID'), get_config_value('RAZORPAY_KEY_SECRET')))
-    
-    order_data = {
-        'amount': amount, 
-        'currency': 'INR', 
-        'receipt': f'receipt_user_{current_user.id}_{plan.plan_id}', 
-        'notes': {
-            'user_id': current_user.id, 
-            'plan': plan.plan_id
-        }
-    }
-    
     try:
-        order = client.order.create(data=order_data)
-        return jsonify({
-            'order_id': order['id'], 
-            'key_id': get_config_value('RAZORPAY_KEY_ID'), 
-            'amount': order['amount'], 
-            'currency': order['currency'], 
-            'name': 'TubeAlgo', 
-            'description': plan_name, 
-            'prefill': {'email': current_user.email}
-        })
-    except Exception as e:
-        print(f"Error creating Razorpay order: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@payment_bp.route('/verify-payment', methods=['POST'])
-@login_required
-def verify_payment():
-    data = request.json
-    try:
-        client = razorpay.Client(auth=(get_config_value('RAZORPAY_KEY_ID'), get_config_value('RAZORPAY_KEY_SECRET')))
-        client.utility.verify_payment_signature(data)
+        order_id = f"tubealgo-order-{int(time.time())}"
         
-        order_details = client.order.fetch(data['razorpay_order_id'])
-        plan = order_details['notes']['plan']
-        
-        # यूज़र का प्लान अपग्रेड करें
-        current_user.subscription_plan = plan
-        
-        # नया पेमेंट रिकॉर्ड बनाएँ
-        new_payment = Payment(
-            user_id=current_user.id,
-            razorpay_payment_id=data['razorpay_payment_id'],
-            razorpay_order_id=data['razorpay_order_id'],
-            amount=order_details['amount'],
-            currency=order_details['currency'],
-            plan_id=plan,
-            status='captured'
+        create_order_request = CreateOrderRequest(
+            order_id=order_id,
+            order_amount=float(plan.price / 100),
+            order_currency="INR",
+            customer_details=CustomerDetails(
+                customer_id=str(current_user.id),
+                customer_email=current_user.email
+            ),
+            order_meta={
+                "return_url": url_for('payment.cashfree_verification', order_id='{order_id}', _external=True)
+            }
         )
-        db.session.add(new_payment)
         
-        # रेफरल क्रेडिट्स अपडेट करें
-        if current_user.referred_by:
-            referrer = User.query.filter_by(referral_code=current_user.referred_by).first()
-            if referrer:
-                referrer.referral_credits = (referrer.referral_credits or 0) + 100
-                current_user.referred_by = None 
+        api_instance = OrdersApi()
+        response = api_instance.create_order(create_order_request)
+        
+        return jsonify({
+            'payment_session_id': response.payment_session_id,
+            'order_id': response.order_id
+        })
 
-        db.session.commit()
-        flash('Payment successful! Your plan has been upgraded.', 'success')
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        db.session.rollback()
-        print(f"Error verifying Razorpay payment: {e}")
-        flash(f'Payment verification failed.', 'error')
-        return jsonify({'status': 'error', 'message': str(e)}), 400
+    except ApiException as e:
+        print(f"Error creating Cashfree order: {e}")
+        return jsonify({'error': str(e.body)}), 500
+
+@payment_bp.route('/cashfree-verification')
+@login_required
+def cashfree_verification():
+    order_id = request.args.get('order_id')
+    if not order_id:
+        flash("Payment verification failed. Order ID not found.", "error")
+        return redirect(url_for('core.pricing'))
+
+    try:
+        api_instance = OrdersApi()
+        response = api_instance.get_order(order_id)
+
+        if response.order_status == "PAID":
+            plan_id = response.tags.get('plan', 'creator') # Fallback
+            
+            # जांचें कि क्या यह पेमेंट पहले से ही रिकॉर्ड किया गया है
+            existing_payment = Payment.query.filter_by(razorpay_order_id=order_id).first()
+            if existing_payment:
+                flash("This payment has already been processed.", "info")
+                return redirect(url_for('dashboard.dashboard'))
+
+            # यूज़र का प्लान अपग्रेड करें
+            current_user.subscription_plan = plan_id
+            
+            # नया पेमेंट रिकॉर्ड बनाएँ
+            new_payment = Payment(
+                user_id=current_user.id,
+                razorpay_payment_id=response.payments.data[0].cf_payment_id if response.payments.data else order_id,
+                razorpay_order_id=order_id,
+                amount=int(response.order_amount * 100),
+                currency=response.order_currency,
+                plan_id=plan_id,
+                status='captured'
+            )
+            db.session.add(new_payment)
+            db.session.commit()
+            
+            flash('Payment successful! Your plan has been upgraded.', 'success')
+            return redirect(url_for('dashboard.dashboard'))
+        else:
+            flash(f"Payment was not successful. Status: {response.order_status}", "error")
+            return redirect(url_for('core.pricing'))
+
+    except ApiException as e:
+        flash(f"Error verifying payment: {str(e.body)}", "error")
+        return redirect(url_for('core.pricing'))
