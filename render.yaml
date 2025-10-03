@@ -34,11 +34,21 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: RAZORPAY_KEY_ID
-        sync: false
-      - key: RAZORPAY_KEY_SECRET
-        sync: false
       - key: MEASUREMENT_ID
         sync: false
+
+      # --- REMOVE RAZORPAY KEYS ---
+      # - key: RAZORPAY_KEY_ID
+      #   sync: false
+      # - key: RAZORPAY_KEY_SECRET
+      #   sync: false
+        
+      # +++ ADD CASHFREE KEYS HERE +++
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_ENV
+        value: "TEST" # या "PROD" जब आप लाइव होंगे
 
     autoDeploy: true
