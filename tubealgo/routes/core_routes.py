@@ -37,7 +37,6 @@ def about():
     }
     return render_template('about.html', **seo_data)
 
-# === यहाँ से नया कोड जोड़ा गया है ===
 @core_bp.route('/contact')
 def contact():
     return render_template('contact.html', title='Contact Us - TubeAlgo')
@@ -49,8 +48,12 @@ def refund_policy():
 @core_bp.route('/data-disclaimer')
 def data_disclaimer():
     return render_template('data_disclaimer.html', title='Data Disclaimer - TubeAlgo')
-# === यहाँ तक ===
 
+# === यहाँ नया कोड जोड़ा गया है ===
+@core_bp.route('/shipping-policy')
+def shipping_policy():
+    return render_template('shipping_policy.html', title='Shipping Policy - TubeAlgo')
+# === यहाँ तक ===
 
 @core_bp.route('/terms-of-service')
 def terms():
