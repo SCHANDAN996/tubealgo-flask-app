@@ -6,8 +6,9 @@ from tubealgo import db
 from tubealgo.models import User, SubscriptionPlan, Payment, get_config_value
 import time
 
-# --- FINAL CORRECT IMPORTS for Cashfree ---
-from cashfree_pg.api_client import Cashfree
+# --- Correct Imports for Cashfree ---
+from cashfree_pg import ApiClient, Configuration
+from cashfree_pg.api.orders_api import OrdersApi
 from cashfree_pg.exceptions import ApiException
 from cashfree_pg.models.create_order_request import CreateOrderRequest
 from cashfree_pg.models.customer_details import CustomerDetails
@@ -15,12 +16,26 @@ from cashfree_pg.models.order_meta import OrderMeta
 
 payment_bp = Blueprint('payment', __name__)
 
-def configure_cashfree():
-    """Configures the Cashfree SDK with credentials."""
-    Cashfree.XClientId = get_config_value('CASHFREE_APP_ID')
-    Cashfree.XClientSecret = get_config_value('CASHFREE_SECRET_KEY')
-    env = get_config_value('CASHFREE_ENV')
-    Cashfree.XEnvironment = Cashfree.PRODUCTION if env == 'PROD' else Cashfree.SANDBOX
+def get_cashfree_api_instance():
+    """Configures and returns a Cashfree API client instance."""
+    is_prod = get_config_value('CASHFREE_ENV') == 'PROD'
+    host = "https://api.cashfree.com/pg" if is_prod else "https://sandbox.cashfree.com/pg"
+    
+    client_id = get_config_value('CASHFREE_APP_ID')
+    client_secret = get_config_value('CASHFREE_SECRET_KEY')
+    if not client_id or not client_secret:
+        print("ERROR: CASHFREE_APP_ID or CASHFREE_SECRET_KEY not set.")
+        return None
+
+    config = Configuration(
+        host = host,
+        api_key = {
+            'XClientID': client_id,
+            'XClientSecret': client_secret
+        }
+    )
+    api_client = ApiClient(config)
+    return api_client
 
 @payment_bp.route('/create-cashfree-order', methods=['POST'])
 @login_required
@@ -32,14 +47,21 @@ def create_cashfree_order():
         return jsonify({'error': 'Invalid plan selected.'}), 400
 
     try:
-        configure_cashfree()
+        api_client = get_cashfree_api_instance()
+        if not api_client:
+            return jsonify({'error': 'Payment gateway is not configured correctly.'}), 500
+
+        order_api_instance = OrdersApi(api_client)
         
+        # --- FIX for customer_id length ---
+        customer_id_for_payment = f"user_{current_user.id}"
+
         order_request = CreateOrderRequest(
             order_id=f"tubealgo-order-{int(time.time())}",
             order_amount=float(plan.price / 100),
             order_currency="INR",
             customer_details=CustomerDetails(
-                customer_id=str(current_user.id),
+                customer_id=customer_id_for_payment, # Use the fixed customer_id
                 customer_email=current_user.email,
                 customer_phone="9999999999"
             ),
@@ -51,7 +73,7 @@ def create_cashfree_order():
             }
         )
         
-        api_response = Cashfree().PGCreateOrder(x_api_version="2023-08-01", create_order_request=order_request)
+        api_response = order_api_instance.create_order(x_api_version="2023-08-01", create_order_request=order_request)
         
         return jsonify({
             'payment_session_id': api_response.data.payment_session_id,
@@ -74,9 +96,14 @@ def cashfree_verification():
         return redirect(url_for('core.pricing'))
 
     try:
-        configure_cashfree()
+        api_client = get_cashfree_api_instance()
+        if not api_client:
+            flash("Payment gateway is not configured correctly.", "error")
+            return redirect(url_for('core.pricing'))
+            
+        order_api_instance = OrdersApi(api_client)
         
-        api_response = Cashfree().PGFetchOrder(x_api_version="2023-08-01", order_id=order_id)
+        api_response = order_api_instance.get_order(x_api_version="2023-08-01", order_id=order_id)
         order_data = api_response.data
 
         if order_data.order_status == "PAID":
