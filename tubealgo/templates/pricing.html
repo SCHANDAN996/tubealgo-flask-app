@@ -66,8 +66,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const paymentButtons = document.querySelectorAll('.payment-btn');
-    const cashfree = new Cashfree();
-
+    
     paymentButtons.forEach(button => {
         button.addEventListener('click', async function(e) {
             e.preventDefault();
@@ -89,17 +88,26 @@ document.addEventListener('DOMContentLoaded', function() {
                         const errorData = await orderResponse.json();
                         throw new Error(errorData.error || 'Could not create order.');
                     }
+                    
                     const orderData = await orderResponse.json();
 
-                    // 2. Initiate Cashfree Checkout
+                    // 2. Initialize Cashfree Checkout
+                    const cashfree = new Cashfree();
+                    
                     let checkoutOptions = {
                         paymentSessionId: orderData.payment_session_id,
-                        orderId: orderData.order_id,
                         returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
                     }
                     
-                    cashfree.checkout(checkoutOptions);
-
+                    // 3. Open Cashfree Checkout
+                    cashfree.checkout(checkoutOptions).then(function(result) {
+                        if (result.error) {
+                            console.error("Checkout error:", result.error);
+                            alert('Payment failed: ' + result.error.message);
+                        }
+                        // Redirect will happen automatically via returnUrl
+                    });
+                    
                 } catch (error) {
                     console.error('Payment Error:', error);
                     alert('Could not initiate payment. Please try again.');
