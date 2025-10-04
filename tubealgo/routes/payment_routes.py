@@ -6,9 +6,9 @@ from tubealgo import db
 from tubealgo.models import User, SubscriptionPlan, Payment, get_config_value
 import time
 
-# Cashfree SDK को नए और सही तरीके से इम्पोर्ट करें
-from cashfree_pg.api_client import ApiClient # <-- THIS IS THE FIX
-from cashfree_pg.api.orders import Orders
+# --- Correct Imports for Cashfree ---
+from cashfree_pg import ApiClient, Configuration
+from cashfree_pg.api.orders_api import OrdersApi
 from cashfree_pg.exceptions import ApiException
 from cashfree_pg.models.create_order_request import CreateOrderRequest
 from cashfree_pg.models.customer_details import CustomerDetails
@@ -16,17 +16,27 @@ from cashfree_pg.models.order_meta import OrderMeta
 
 payment_bp = Blueprint('payment', __name__)
 
-def get_cashfree_client():
-    """कैशफ्री API क्लाइंट को कॉन्फ़िगर करने के लिए हेल्पर फ़ंक्शन"""
+def get_cashfree_api_instance():
+    """Configures and returns a Cashfree API client instance."""
     is_prod = get_config_value('CASHFREE_ENV') == 'PROD'
     host = "https://api.cashfree.com/pg" if is_prod else "https://sandbox.cashfree.com/pg"
     
-    client = ApiClient(
-        client_id=get_config_value('CASHFREE_APP_ID'),
-        client_secret=get_config_value('CASHFREE_SECRET_KEY'),
-        environment=host
+    # Check if keys are present
+    client_id = get_config_value('CASHFREE_APP_ID')
+    client_secret = get_config_value('CASHFREE_SECRET_KEY')
+    if not client_id or not client_secret:
+        print("ERROR: CASHFREE_APP_ID or CASHFREE_SECRET_KEY not set.")
+        return None
+
+    config = Configuration(
+        host = host,
+        api_key = {
+            'XClientID': client_id,
+            'XClientSecret': client_secret
+        }
     )
-    return client
+    api_client = ApiClient(config)
+    return api_client
 
 @payment_bp.route('/create-cashfree-order', methods=['POST'])
 @login_required
@@ -38,8 +48,11 @@ def create_cashfree_order():
         return jsonify({'error': 'Invalid plan selected.'}), 400
 
     try:
-        client = get_cashfree_client()
-        order_api = Orders(client)
+        api_client = get_cashfree_api_instance()
+        if not api_client:
+            return jsonify({'error': 'Payment gateway is not configured correctly.'}), 500
+
+        order_api_instance = OrdersApi(api_client)
         
         order_request = CreateOrderRequest(
             order_id=f"tubealgo-order-{int(time.time())}",
@@ -48,21 +61,21 @@ def create_cashfree_order():
             customer_details=CustomerDetails(
                 customer_id=str(current_user.id),
                 customer_email=current_user.email,
-                customer_phone="9999999999"  # यह एक आवश्यक फ़ील्ड है
+                customer_phone="9999999999"  # This is a required field
             ),
             order_meta=OrderMeta(
-                return_url=url_for('payment.cashfree_verification', order_id='{order_id}', _external=True)
+                return_url=url_for('payment.cashfree_verification', _external=True) + "?order_id={order_id}"
             ),
             order_tags={
                 "plan": plan.plan_id
             }
         )
         
-        api_response = order_api.create_order(x_api_version="2023-08-01", create_order_request=order_request)
+        api_response = order_api_instance.create_order(x_api_version="2023-08-01", create_order_request=order_request)
         
         return jsonify({
-            'payment_session_id': api_response.payment_session_id,
-            'order_id': api_response.order_id
+            'payment_session_id': api_response.data.payment_session_id,
+            'order_id': api_response.data.order_id
         })
 
     except ApiException as e:
@@ -81,13 +94,18 @@ def cashfree_verification():
         return redirect(url_for('core.pricing'))
 
     try:
-        client = get_cashfree_client()
-        order_api = Orders(client)
+        api_client = get_cashfree_api_instance()
+        if not api_client:
+            flash("Payment gateway is not configured correctly.", "error")
+            return redirect(url_for('core.pricing'))
+            
+        order_api_instance = OrdersApi(api_client)
         
-        api_response = order_api.get_order(x_api_version="2023-08-01", order_id=order_id)
+        api_response = order_api_instance.get_order(x_api_version="2023-08-01", order_id=order_id)
+        order_data = api_response.data
 
-        if api_response.order_status == "PAID":
-            plan_id = api_response.order_tags.get('plan', 'creator')
+        if order_data.order_status == "PAID":
+            plan_id = order_data.order_tags.get('plan', 'creator') if order_data.order_tags else 'creator'
             
             existing_payment = Payment.query.filter_by(razorpay_order_id=order_id).first()
             if existing_payment:
@@ -98,10 +116,10 @@ def cashfree_verification():
             
             new_payment = Payment(
                 user_id=current_user.id,
-                razorpay_payment_id=api_response.cf_order_id,
+                razorpay_payment_id=order_data.cf_order_id,
                 razorpay_order_id=order_id,
-                amount=int(api_response.order_amount * 100),
-                currency=api_response.order_currency,
+                amount=int(order_data.order_amount * 100),
+                currency=order_data.order_currency,
                 plan_id=plan_id,
                 status='captured'
             )
@@ -111,7 +129,7 @@ def cashfree_verification():
             flash('Payment successful! Your plan has been upgraded.', 'success')
             return redirect(url_for('dashboard.dashboard'))
         else:
-            flash(f"Payment was not successful. Status: {api_response.order_status}", "error")
+            flash(f"Payment was not successful. Status: {order_data.order_status}", "error")
             return redirect(url_for('core.pricing'))
 
     except ApiException as e:
