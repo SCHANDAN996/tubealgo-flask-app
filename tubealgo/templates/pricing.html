@@ -73,11 +73,12 @@ document.addEventListener('DOMContentLoaded', function() {
             
             {% if current_user.is_authenticated %}
                 const planId = this.dataset.planId;
+                const originalButtonText = this.innerHTML;
                 this.innerHTML = 'Processing...';
                 this.disabled = true;
 
                 try {
-                    // 1. Create Order on your backend
+                    // 1. अपने सर्वर पर ऑर्डर बनाएँ
                     const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -91,31 +92,34 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     const orderData = await orderResponse.json();
 
-                    // 2. Initialize Cashfree Checkout
+                    // 2. Cashfree SDK को शुरू करें
                     const cashfree = new Cashfree();
                     
-                    let checkoutOptions = {
-                        paymentSessionId: orderData.payment_session_id,
-                        returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
-                    }
-                    
-                    // 3. Open Cashfree Checkout
-                    cashfree.checkout(checkoutOptions).then(function(result) {
+                    // 3. चेकआउट पॉपअप खोलें
+                    cashfree.checkout({
+                        paymentSessionId: orderData.payment_session_id
+                    }).then((result) => {
                         if (result.error) {
-                            console.error("Checkout error:", result.error);
+                            console.error("Cashfree Checkout Error:", result.error);
                             alert('Payment failed: ' + result.error.message);
+                            // बटन को रीसेट करें
+                            this.innerHTML = originalButtonText;
+                            this.disabled = false;
                         }
-                        // Redirect will happen automatically via returnUrl
+                        if (result.redirect) {
+                            // पेमेंट के बाद return_url पर अपने आप रीडायरेक्ट हो जाएगा।
+                            console.log("Redirecting to verification...");
+                        }
                     });
                     
                 } catch (error) {
-                    console.error('Payment Error:', error);
-                    alert('Could not initiate payment. Please try again.');
-                    this.innerHTML = 'Upgrade Now';
+                    console.error('Payment Initiation Error:', error);
+                    alert(error.message || 'Could not initiate payment. Please try again.');
+                    this.innerHTML = originalButtonText;
                     this.disabled = false;
                 }
             {% else %}
-                // If user is not logged in, redirect to signup
+                // अगर यूज़र लॉग इन नहीं है, तो साइनअप पेज पर भेजें
                 window.location.href = "{{ url_for('auth.signup') }}";
             {% endif %}
         });
