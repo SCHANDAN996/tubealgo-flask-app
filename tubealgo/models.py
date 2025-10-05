@@ -1,4 +1,5 @@
-# Filepath: tubealgo/models.py
+# tubealgo/models.py
+
 import os
 import json
 from flask_login import UserMixin
@@ -26,8 +27,6 @@ def log_system_event(message, log_type='INFO', details=None):
         db.session.add(log_entry)
         db.session.commit()
 
-        # === यहाँ बदलाव किया गया है ===
-        # अब यह QUOTA_EXCEEDED और ERROR दोनों पर अलर्ट भेजेगा
         CRITICAL_LOG_TYPES = ['QUOTA_EXCEEDED', 'ERROR']
         if log_type in CRITICAL_LOG_TYPES:
             admin_chat_id = get_setting('ADMIN_TELEGRAM_CHAT_ID')
@@ -56,11 +55,9 @@ def is_admin_telegram_user(chat_id):
         return True
     return False
 
-# ... (बाकी सभी मॉडल्स और फंक्शन्स वैसे ही रहेंगे)
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    # ... (rest of the User model)
     password_hash = db.Column(db.String(256), nullable=False)
     telegram_chat_id = db.Column(db.String(100), unique=True, nullable=True)
     default_channel_name = db.Column(db.String(100), nullable=True)
@@ -134,12 +131,16 @@ class Coupon(db.Model):
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    razorpay_payment_id = db.Column(db.String(100), unique=True, nullable=False)
-    razorpay_order_id = db.Column(db.String(100), unique=True, nullable=False)
-    amount = db.Column(db.Integer, nullable=False) # Stored in paise
+    
+    # Razorpay की जगह अब ये नए कॉलम
+    order_id = db.Column(db.String(100), unique=True, nullable=False, index=True) # हमारा बनाया हुआ यूनिक ऑर्डर ID
+    gateway_order_id = db.Column(db.String(100), nullable=True) # Cashfree से मिला ऑर्डर ID
+    gateway_payment_id = db.Column(db.String(100), nullable=True) # Cashfree से मिला पेमेंट ID
+    
+    amount = db.Column(db.Integer, nullable=False) # पैसे में स्टोर होगा
     currency = db.Column(db.String(10), nullable=False, default='INR')
     plan_id = db.Column(db.String(50), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='captured')
+    status = db.Column(db.String(20), nullable=False, default='created') # e.g., created, captured, failed
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
     user = db.relationship('User', backref='payments')
