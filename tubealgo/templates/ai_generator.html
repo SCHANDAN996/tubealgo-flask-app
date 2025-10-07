@@ -1,7 +1,14 @@
 {% extends "app_layout.html" %}
 
 {% block app_content %}
-<div class="max-w-4xl mx-auto">
+<div class="max-w-4xl mx-auto" x-data="aiGeneratorPage()">
+    <div x-show="isLoading" x-transition:enter="ease-out duration-300" x-transition:leave="ease-in duration-200" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center" x-cloak>
+        <div class="bg-gray-800/80 rounded-lg p-8 text-center">
+            <i class="fa-solid fa-wand-magic-sparkles fa-spin text-4xl text-white"></i>
+            <p class="mt-4 font-semibold text-white" x-text="loadingMessage"></p>
+        </div>
+    </div>
+
     <div class="text-center mb-10">
         <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 bg-brand-purple/10 text-brand-purple">
             <i class="fa-solid fa-wand-magic-sparkles text-3xl"></i>
@@ -11,65 +18,190 @@
     </div>
 
     <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm">
-        <form method="POST" id="generator-form">
+        <form @submit.prevent="generateTitlesAndTags()">
             <div>
                 <div class="flex items-center gap-3 mb-2">
                     <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">1</span>
-                    <label for="topic" class="text-lg font-semibold text-foreground">Enter Your Video Topic</label>
+                    <label for="topic" class="text-lg font-semibold text-foreground">Enter or Select Your Video Title</label>
                 </div>
                 <div class="pl-11">
-                    <textarea name="topic" id="topic" rows="3" class="w-full bg-background border border-input rounded-lg p-3 text-base focus:ring-2 focus:ring-primary focus:outline-none transition-shadow" placeholder="e.g., How to make restaurant-style paneer butter masala at home" required>{{ topic or '' }}</textarea>
-                    <button type="submit" class="mt-4 inline-flex items-center justify-center bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors shadow-sm">
+                    <textarea name="topic" id="topic" x-model="topic" rows="3" class="w-full bg-background border border-input rounded-lg p-3 text-base focus:ring-2 focus:ring-primary focus:outline-none transition-shadow" placeholder="e.g., How to make restaurant-style paneer butter masala at home" required></textarea>
+                    
+                    <button type="submit" x-show="step === 'initial'" class="mt-4 inline-flex items-center justify-center bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors shadow-sm">
                         <i class="fa-solid fa-stars mr-2"></i>
                         <span>Generate Titles & Tags</span>
                     </button>
                 </div>
             </div>
         </form>
+    </div>
 
-        {% if results and 'error' not in results %}
-        <hr class="my-8 border-border">
-        <div>
-            <div class="flex items-center gap-3 mb-4">
-                <span class="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">2</span>
-                <h2 class="text-lg font-semibold text-foreground">Generated Results</h2>
+    <div class="mt-6 space-y-6" x-show="results" x-transition>
+        
+        <div x-show="step === 'titles'">
+            <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm space-y-3">
+                <h3 class="font-bold text-foreground">Select Your Favorite Title</h3>
+                <template x-for="(titleData, index) in results.titles" :key="index">
+                    <div @click="selectTitleAndProceed(titleData)" 
+                         class="cursor-pointer bg-secondary p-4 rounded-lg border transition-all group relative" 
+                         :class="index === 0 ? 'border-2 border-primary shadow-lg' : 'border-border hover:border-primary/50'">
+                        
+                        <template x-if="index === 0"><div class="absolute -top-3 left-4 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">🏆 AI Top Pick</div></template>
+                        
+                        <div class="flex justify-between items-start">
+                            <p class="font-semibold text-foreground pr-16" x-text="titleData.title"></p>
+                            <div class="flex-shrink-0 flex flex-col items-center justify-center bg-primary/10 text-primary rounded-lg px-2 py-1">
+                                <span class="font-extrabold text-lg" x-text="titleData.score"></span>
+                                <span class="text-[10px] font-bold">SCORE</span>
+                            </div>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <template x-for="strength in titleData.strengths" :key="strength">
+                                <span class="text-xs font-semibold bg-background text-muted-foreground px-2 py-1 rounded-full border border-border flex items-center gap-1.5">
+                                    <i class="fa-solid" :class="{ 'fa-mouse-pointer text-blue-500': strength.includes('CTR'), 'fa-magnifying-glass text-green-500': strength.includes('SEO'), 'fa-bolt text-yellow-500': strength.includes('Curiosity') || strength.includes('Hook'), 'fa-fire text-orange-500': strength.includes('Viral'), 'fa-comments text-purple-500': strength.includes('Engagement'), 'fa-heart text-red-500': strength.includes('Emotional') }"></i>
+                                    <span x-text="strength"></span>
+                                </span>
+                            </template>
+                        </div>
+                    </div>
+                </template>
             </div>
-            <div class="pl-11 space-y-6">
-                <div>
-                    <h3 class="font-semibold text-foreground mb-3">Generated Titles</h3>
-                    <ul class="space-y-2">
-                        {% for title in results.titles %}
-                        <li class="bg-secondary p-3 rounded-lg text-muted-foreground">{{ title }}</li>
-                        {% endfor %}
-                    </ul>
+        </div>
+
+        <div x-show="step === 'description'" class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm space-y-4">
+            <button @click="generateDescription()" class="w-full bg-secondary text-secondary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-border transition-colors">
+                <i class="fa-solid fa-file-pen mr-2"></i> Generate Description
+            </button>
+            <template x-if="generatedDescription">
+                <div class="bg-secondary p-4 rounded-lg border">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-semibold text-foreground">Generated Description</h3>
+                        <button @click="copyToClipboard(generatedDescription, $el)" class="text-xs font-semibold bg-background px-2 py-1 rounded-md hover:bg-border">Copy</button>
+                    </div>
+                    <pre class="whitespace-pre-wrap text-sm font-sans text-muted-foreground" x-text="generatedDescription"></pre>
                 </div>
-                <div>
-                    <div class="flex justify-between items-center mb-3">
-                        <h3 class="font-semibold text-foreground">Generated Tags</h3>
-                        <button type="button" class="copy-btn bg-secondary hover:bg-border text-xs font-medium px-3 py-1 rounded-full">
-                            <i class="fa-regular fa-copy mr-1"></i> Copy All
-                        </button>
-                    </div>
-                    <div class="flex flex-wrap gap-2" data-copy-text="{{ results.tags|join(', ') }}">
-                        {% for tag in results.tags %}
-                        <span class="bg-secondary text-muted-foreground text-sm font-medium px-3 py-1 rounded-full">{{ tag }}</span>
-                        {% endfor %}
-                    </div>
+            </template>
+        </div>
+
+        <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm space-y-4">
+            <div class="flex justify-between items-center">
+                <h3 class="font-bold text-foreground">AI Tag Recommendations</h3>
+                <button @click="copyAllTags($el)" class="text-xs font-semibold bg-secondary px-3 py-1.5 rounded-md hover:bg-border">Copy All Tags</button>
+            </div>
+            <div x-show="results.tags.main_keywords && results.tags.main_keywords.length > 0">
+                <div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-foreground flex items-center gap-2 text-sm"><i class="fa-solid fa-key text-yellow-500"></i> Main Keywords</h4><button @click="copyTags(results.tags.main_keywords, $el)" class="text-xs font-semibold bg-secondary px-2 py-1 rounded-md hover:bg-border">Copy</button></div>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="tag in results.tags.main_keywords" :key="tag"><span class="text-sm font-semibold px-3 py-1.5 rounded-lg border-2 border-secondary bg-secondary" x-text="tag"></span></template>
+                </div>
+            </div>
+            <div x-show="results.tags.secondary_keywords && results.tags.secondary_keywords.length > 0">
+                <div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-foreground flex items-center gap-2 text-sm"><i class="fa-solid fa-tags text-blue-500"></i> Secondary Keywords</h4><button @click="copyTags(results.tags.secondary_keywords, $el)" class="text-xs font-semibold bg-secondary px-2 py-1 rounded-md hover:bg-border">Copy</button></div>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="tag in results.tags.secondary_keywords" :key="tag"><span class="text-sm font-medium px-3 py-1 rounded-lg border bg-secondary" x-text="tag"></span></template>
+                </div>
+            </div>
+             <div x-show="results.tags.broad_tags && results.tags.broad_tags.length > 0">
+                <div class="flex justify-between items-center mb-2"><h4 class="font-semibold text-foreground flex items-center gap-2 text-sm"><i class="fa-solid fa-folder-open text-gray-500"></i> Broad Categories</h4><button @click="copyTags(results.tags.broad_tags, $el)" class="text-xs font-semibold bg-secondary px-2 py-1 rounded-md hover:bg-border">Copy</button></div>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="tag in results.tags.broad_tags" :key="tag"><span class="text-sm font-medium px-3 py-1 rounded-lg border bg-secondary" x-text="tag"></span></template>
                 </div>
             </div>
         </div>
-        {% endif %}
     </div>
 </div>
 
 <script>
-document.querySelector('.copy-btn')?.addEventListener('click', (buttonEl) => {
-    const textToCopy = buttonEl.target.closest('div').nextElementSibling.dataset.copyText;
-    navigator.clipboard.writeText(textToCopy).then(() => {
-        const originalText = buttonEl.target.innerHTML;
-        buttonEl.target.innerHTML = '<i class="fa-solid fa-check mr-1"></i> Copied!';
-        setTimeout(() => { buttonEl.target.innerHTML = originalText; }, 2000);
-    });
-});
+function aiGeneratorPage() {
+    return {
+        step: 'initial', // 'initial', 'titles', 'description'
+        topic: '{{ topic or '' }}',
+        results: null,
+        selectedTitle: '',
+        isLoading: false,
+        loadingMessage: '',
+        generatedDescription: '',
+
+        async generateTitlesAndTags() {
+            if (!this.topic.trim()) { alert("Please enter a topic."); return; }
+            const cacheKey = `ai_copilot_titles_${this.topic.trim().toLowerCase()}`;
+            const cachedResult = localStorage.getItem(cacheKey);
+            if(cachedResult) {
+                this.results = JSON.parse(cachedResult);
+                this.step = 'titles';
+                return;
+            }
+
+            this.isLoading = true;
+            this.loadingMessage = 'Generating Titles & Tags...';
+            try {
+                const response = await fetch("{{ url_for('tool.ai_generator') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic: this.topic })
+                });
+                if (!response.ok) throw new Error('Network response was not ok.');
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                this.results = data;
+                this.step = 'titles';
+                localStorage.setItem(cacheKey, JSON.stringify(data));
+            } catch (error) {
+                alert('An error occurred: ' + error.message);
+                this.results = null;
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        selectTitleAndProceed(titleData) {
+            this.topic = titleData.title;
+            this.selectedTitle = titleData.title;
+            this.step = 'description';
+            this.generatedDescription = ''; // Reset previous description
+        },
+
+        async generateDescription() {
+            if (!this.selectedTitle) return;
+            this.isLoading = true;
+            this.loadingMessage = 'Generating Description...';
+            try {
+                const response = await fetch("{{ url_for('tool.api_generate_description') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic: this.topic, title: this.selectedTitle })
+                });
+                if (!response.ok) throw new Error('Network response was not ok.');
+                const data = await response.json();
+                if (data.error) throw new Error(data.error.details || data.error);
+                this.generatedDescription = data.description;
+            } catch (error) {
+                alert('An error occurred: ' + error.message);
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        copyTags(tags, btn) { this.copyToClipboard(tags.join(', '), btn); },
+        
+        copyAllTags(btn) {
+            if (!this.results || !this.results.tags) return;
+            const allTags = [
+                ...(this.results.tags.main_keywords || []),
+                ...(this.results.tags.secondary_keywords || []),
+                ...(this.results.tags.broad_tags || [])
+            ];
+            this.copyToClipboard(allTags.join(', '), btn);
+        },
+
+        copyToClipboard(text, btn) {
+            if (!text || text.trim() === '') return;
+            navigator.clipboard.writeText(text.trim()).then(() => {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = 'Copied!';
+                setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+            });
+        }
+    }
+}
 </script>
 {% endblock %}

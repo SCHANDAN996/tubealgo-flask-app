@@ -1,17 +1,14 @@
-# Filepath: tubealgo/routes/competitor_routes.py
-
 from flask import render_template, request, redirect, url_for, flash, Blueprint, jsonify
 from flask_login import login_required, current_user
 from flask_wtf import FlaskForm
 from tubealgo import db
-from tubealgo.models import Competitor, SubscriptionPlan
+from tubealgo.models import Competitor, SubscriptionPlan, User
 from tubealgo.services.youtube_fetcher import (
     analyze_channel, get_youtube_categories, get_top_channels_by_category, 
     find_similar_channels
 )
 from tubealgo.services.notification_service import send_telegram_photo_with_caption
 from tubealgo.routes.api_routes import get_full_competitor_package
-# MODIFIED: Import helper functions from the new utils.py file
 from tubealgo.routes.utils import get_video_info_dict 
 import json
 
@@ -34,6 +31,9 @@ def competitors():
 @competitor_bp.route('/competitors/add', methods=['POST'])
 @login_required
 def add_competitor():
+    next_page = request.args.get('next')
+    redirect_url = next_page or url_for('competitor.competitors')
+
     plan = SubscriptionPlan.query.filter_by(plan_id=current_user.subscription_plan).first() or SubscriptionPlan.query.filter_by(plan_id='free').first()
     limit = plan.competitors_limit if plan else 0
     if limit != -1 and current_user.competitors.count() >= limit:
@@ -47,7 +47,7 @@ def add_competitor():
     
     if not search_input or not search_input.strip():
         flash('Please enter a channel name or URL.', 'error')
-        return redirect(url_for('competitor.competitors'))
+        return redirect(redirect_url)
     
     analysis_data = analyze_channel(search_input)
     
@@ -64,13 +64,10 @@ def add_competitor():
             db.session.add(new_competitor)
             db.session.commit()
             
-            print(f"DEBUG: Starting to pre-cache full data for new competitor ID: {new_competitor.id}")
             get_full_competitor_package(new_competitor.id, force_refresh=True)
-            print(f"DEBUG: Finished pre-caching for new competitor ID: {new_competitor.id}")
-            
             flash(f"'{analysis_data['Title']}' has been added and fully analyzed!", 'success')
             
-    return redirect(url_for('competitor.competitors'))
+    return redirect(redirect_url)
 
 @competitor_bp.route('/competitors/delete/<int:competitor_id>', methods=['POST'])
 @login_required

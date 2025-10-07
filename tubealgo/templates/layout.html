@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="light">
+<html lang="en" x-data="themeManager" :class="{ 'dark': theme === 'dark' }">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,7 +11,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script> <link href="https://cdn.jsdelivr.net/npm/gridstack@8.1.1/dist/gridstack.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/gridstack@8.1.1/dist/gridstack-all.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/gridstack@8.1.1/dist/gridstack-extra.min.css" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/gridstack@8.1.1/dist/gridstack-extra.min.js"></script>
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     
     <style>
@@ -23,13 +27,17 @@
         .prose a { @apply text-primary hover:underline; }
         .prose ul { @apply list-disc list-inside; }
         .prose strong { @apply text-foreground; }
+        /* Gridstack Customizations */
+        .grid-stack-item-content { @apply bg-card rounded-xl border shadow-sm; }
+        .grid-stack-placeholder > .placeholder-content { @apply bg-primary/20 border-primary border-2 border-dashed rounded-xl; }
     </style>
     
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="font-sans antialiased bg-secondary text-foreground">
+<body class="font-sans antialiased bg-background text-foreground">
     <div class="min-h-screen flex flex-col">
         <header class="bg-card/80 backdrop-blur-md sticky top-0 z-50 border-b border-border">
             <nav class="container mx-auto px-4 flex justify-between items-center py-3" x-data="{ open: false, toolsOpen: false }">
@@ -61,13 +69,22 @@
                         </div>
 
                         <a href="{{ url_for('core.pricing') }}" class="px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Pricing</a>
-
                         <a href="{{ url_for('settings.settings') }}" class="px-2.5 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Settings</a>
+                        
+                        <button @click="toggleTheme" class="ml-4 w-10 h-10 flex items-center justify-center rounded-lg hover:bg-secondary transition-colors">
+                            <i class="fa-solid fa-sun text-lg" x-show="theme === 'light'"></i>
+                            <i class="fa-solid fa-moon text-lg" x-show="theme === 'dark'"></i>
+                        </button>
+                        
                         <a href="{{ url_for('auth.logout') }}" class="bg-primary text-primary-foreground ml-2 px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">Log Out</a>
                     {% else %}
                         <a href="{{ url_for('core.home') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Home</a>
                         <a href="{{ url_for('core.pricing') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary">Pricing</a>
                         <a href="{{ url_for('core.contact') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary">Contact</a>
+                        <button @click="toggleTheme" class="ml-4 w-10 h-10 flex items-center justify-center rounded-lg hover:bg-secondary transition-colors">
+                            <i class="fa-solid fa-sun text-lg" x-show="theme === 'light'"></i>
+                            <i class="fa-solid fa-moon text-lg" x-show="theme === 'dark'"></i>
+                        </button>
                         <a href="{{ url_for('auth.login') }}" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary">Login</a>
                         <a href="{{ url_for('auth.signup') }}" class="bg-primary text-primary-foreground ml-2 px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">Sign Up Free</a>
                     {% endif %}
@@ -96,5 +113,22 @@
             </div>
         </footer>
     </div>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('themeManager', () => ({
+        theme: localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+        init() {
+            this.$watch('theme', val => {
+                localStorage.setItem('theme', val);
+            });
+        },
+        toggleTheme() {
+            this.theme = this.theme === 'light' ? 'dark' : 'light';
+        }
+    }));
+});
+</script>
+
 </body>
 </html>

@@ -1,5 +1,3 @@
-# tubealgo/models.py
-
 import os
 import json
 from flask_login import UserMixin
@@ -19,10 +17,18 @@ def log_system_event(message, log_type='INFO', details=None):
     try:
         from .services.notification_service import send_telegram_message # Local import
         
+        # विवरण को स्ट्रिंग में बदलें, चाहे वह कुछ भी हो
+        details_str = ""
+        if details:
+            if isinstance(details, dict):
+                details_str = json.dumps(details, indent=2)
+            else:
+                details_str = str(details)
+
         log_entry = SystemLog(
             log_type=log_type,
             message=message,
-            details=json.dumps(details, indent=2) if isinstance(details, dict) else str(details)
+            details=details_str
         )
         db.session.add(log_entry)
         db.session.commit()
@@ -38,9 +44,8 @@ def log_system_event(message, log_type='INFO', details=None):
                     f"{icon} *{alert_title}: {log_type}*\n\n"
                     f"*Message:* {message}\n\n"
                 )
-                if details:
-                    details_str = json.dumps(details, indent=2) if isinstance(details, dict) else str(details)
-                    telegram_message += f"*Details:* ```\n{details_str[:500]}\n```" # Details के पहले 500 अक्षर
+                if details_str:
+                    telegram_message += f"*Details:* ```\n{details_str[:1000]}\n```" # Limit details length
                 
                 send_telegram_message(admin_chat_id, telegram_message)
 
@@ -74,6 +79,8 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     status = db.Column(db.String(20), nullable=False, default='active')
 
+    dashboard_layout = db.Column(db.Text, nullable=True)
+
     telegram_notify_new_video = db.Column(db.Boolean, default=True)
     telegram_notify_viral_video = db.Column(db.Boolean, default=True)
     telegram_notify_milestone = db.Column(db.Boolean, default=True)
@@ -103,6 +110,17 @@ class YouTubeChannel(db.Model):
     channel_title = db.Column(db.String(200), nullable=False)
     thumbnail_url = db.Column(db.String(255))
 
+class ChannelSnapshot(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    channel_db_id = db.Column(db.Integer, db.ForeignKey('you_tube_channel.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    subscribers = db.Column(db.Integer, nullable=False)
+    views = db.Column(db.BigInteger, nullable=False)
+    video_count = db.Column(db.Integer, nullable=False)
+    
+    channel = db.relationship('YouTubeChannel', backref='snapshots')
+    __table_args__ = (db.UniqueConstraint('channel_db_id', 'date', name='_channel_date_uc'),)
+
 class Competitor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -131,24 +149,20 @@ class Coupon(db.Model):
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    
-    # Razorpay की जगह अब ये नए कॉलम
-    order_id = db.Column(db.String(100), unique=True, nullable=False, index=True) # हमारा बनाया हुआ यूनिक ऑर्डर ID
-    gateway_order_id = db.Column(db.String(100), nullable=True) # Cashfree से मिला ऑर्डर ID
-    gateway_payment_id = db.Column(db.String(100), nullable=True) # Cashfree से मिला पेमेंट ID
-    
-    amount = db.Column(db.Integer, nullable=False) # पैसे में स्टोर होगा
+    razorpay_payment_id = db.Column(db.String(100), unique=True, nullable=False)
+    razorpay_order_id = db.Column(db.String(100), unique=True, nullable=False)
+    amount = db.Column(db.Integer, nullable=False) # Stored in paise
     currency = db.Column(db.String(10), nullable=False, default='INR')
     plan_id = db.Column(db.String(50), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='created') # e.g., created, captured, failed
+    status = db.Column(db.String(20), nullable=False, default='captured')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
     user = db.relationship('User', backref='payments')
 
 class APIKeyStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    key_identifier = db.Column(db.String(20), unique=True, nullable=False) # e.g., "AIzaS...h28"
-    status = db.Column(db.String(20), nullable=False, default='active') # 'active' or 'exhausted'
+    key_identifier = db.Column(db.String(20), unique=True, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active')
     last_failure_at = db.Column(db.DateTime, nullable=True)
 
 class SubscriptionPlan(db.Model):
@@ -162,6 +176,8 @@ class SubscriptionPlan(db.Model):
     ai_generations_limit = db.Column(db.Integer, nullable=False)
     has_discover_tools = db.Column(db.Boolean, default=False)
     has_ai_suggestions = db.Column(db.Boolean, default=False)
+    playlist_suggestions_limit = db.Column(db.Integer, nullable=False, default=3)
+    is_popular = db.Column(db.Boolean, default=False)
 
 class SiteSetting(db.Model):
     key = db.Column(db.String(100), primary_key=True, unique=True, nullable=False)
@@ -183,6 +199,38 @@ def get_config_value(key, default=None):
         if db_value:
             return db_value
     return os.environ.get(key, default)
+
+class DashboardCache(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    data = db.Column(db.JSON, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('dashboard_cache', uselist=False))
+class ContentIdea(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.Text, nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(50), nullable=False, default='idea', index=True) # e.g., 'idea', 'scripting', 'filming', 'editing', 'scheduled'
+    position = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='content_ideas')
+
+class Goal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    goal_type = db.Column(db.String(50), nullable=False) # 'subscribers', 'views'
+    target_value = db.Column(db.Integer, nullable=False)
+    start_value = db.Column(db.Integer, nullable=False)
+    target_date = db.Column(db.Date, nullable=True)
+    is_active = db.Column(db.Boolean, default=True, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='goals')
+    __table_args__ = (db.UniqueConstraint('user_id', 'goal_type', 'is_active', name='_user_goal_type_active_uc'),)
+
 
 @login_manager.user_loader
 def load_user(user_id):

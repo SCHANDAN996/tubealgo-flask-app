@@ -1,7 +1,8 @@
-# Filepath: tubealgo/services/youtube_fetcher.py
+# tubealgo/services/youtube_fetcher.py
 
 import logging
 import re
+import json
 from collections import Counter
 from .youtube_core import get_youtube_service
 from .cache_manager import get_from_cache, set_to_cache
@@ -88,11 +89,24 @@ def get_latest_videos(channel_id, max_results=20, page_token=None):
         result = {'videos': videos, 'nextPageToken': next_page_token}
         set_to_cache(cache_key, result, expire_hours=4)
         return result
+    
+    except HttpError as e:
+        try:
+            error_details = json.loads(e.content.decode())
+            if e.resp.status == 404 and error_details.get("error", {}).get("errors", [{}])[0].get("reason") == "playlistNotFound":
+                logging.warning(f"Playlist not found for channel {channel_id}, likely a new channel with 0 videos. Returning empty list.")
+                return {'videos': [], 'nextPageToken': None}
+            else:
+                logging.error(f"HTTP Error in get_latest_videos for channel {channel_id}: {e}")
+                return {'videos': [], 'nextPageToken': None, 'error': str(e)}
+        except (json.JSONDecodeError, IndexError, KeyError):
+             logging.error(f"An unparsable HTTP Error in get_latest_videos for channel {channel_id}: {e}")
+             return {'videos': [], 'nextPageToken': None, 'error': str(e)}
+    
     except Exception as e:
         logging.error(f"Error in get_latest_videos for channel {channel_id}: {e}")
         return {'videos': [], 'nextPageToken': None, 'error': str(e)}
 
-# === नया फंक्शन यहाँ जोड़ा गया है ===
 def get_all_channel_videos(channel_id):
     """
     Fetches all videos from a channel's upload playlist by handling pagination automatically.
@@ -116,7 +130,6 @@ def get_all_channel_videos(channel_id):
             break # अगर अगला पेज नहीं है, तो लूप से बाहर निकलें
             
     return all_videos
-# === नया फंक्शन यहाँ समाप्त होता है ===
 
 def get_channel_playlists(channel_id, max_results=25):
     """Fetches a list of public playlists for a given channel."""
@@ -250,11 +263,9 @@ def analyze_channel(channel_input):
 
     channel_id = None
     
-    # Debugging print
     print(f"--- DEBUG (analyze_channel): Received input '{channel_input}' ---")
 
     try:
-        # Regex to find Channel ID (UC...), Handle (@...), or from a full URL
         patterns = [
             r'(UC[a-zA-Z0-9_-]{22})', # Standard Channel ID
             r'/@([a-zA-Z0-9_.-]+)', # Handle
@@ -322,7 +333,6 @@ def get_most_used_tags(channel_id, video_limit=50):
     cached_data = get_from_cache(cache_key)
     if cached_data: return cached_data
     
-    # IMPORTANT: We use get_latest_videos which is paginated, but here we only care about the first page.
     video_data = get_latest_videos(channel_id, max_results=video_limit)
     if not video_data or not video_data.get('videos'): return []
 
@@ -334,7 +344,6 @@ def get_most_used_tags(channel_id, video_limit=50):
 
     all_tags = []
     try:
-        # Fetching details in batches of 50
         for i in range(0, len(video_ids), 50):
             batch_ids = video_ids[i:i+50]
             videos_response = youtube.videos().list(part="snippet", id=",".join(batch_ids)).execute()

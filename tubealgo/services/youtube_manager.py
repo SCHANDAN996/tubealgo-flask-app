@@ -1,8 +1,7 @@
-# Filepath: tubealgo/services/youtube_manager.py
-
 import os
 import logging
 import re
+import json
 from datetime import timedelta, datetime
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -88,7 +87,6 @@ def get_user_playlists(credentials):
         return {'error': str(e)}
 
 def get_competitors_playlists(user):
-    """Fetches a list of popular video titles from competitors to use as playlist topic ideas."""
     from ..models import Competitor
     competitors = user.competitors.all()
     if not competitors:
@@ -98,12 +96,17 @@ def get_competitors_playlists(user):
     for comp in competitors:
         try:
             video_data = get_videos_by_channel_id(comp.channel_id_youtube, max_results=10)
+            
+            if 'error' in video_data:
+                logging.error(f"Could not fetch videos for competitor {comp.channel_title}: {video_data['error']}")
+                return {'error': f"Could not fetch videos for competitor {comp.channel_title}. YouTube API quota may be exceeded."}
+
             videos = video_data.get('videos', [])
             for video in videos:
                 if 'title' in video:
                     all_video_titles.append(video['title'])
         except Exception as e:
-            logging.error(f"Could not fetch data for competitor {comp.channel_id_youtube}: {e}")
+            logging.error(f"An unexpected error occurred while fetching data for competitor {comp.channel_id_youtube}: {e}")
             continue
     
     return list(set(all_video_titles))
@@ -191,7 +194,7 @@ def update_video_details(credentials, video_id, title, description, tags, privac
         logging.error(f"Could not update video {video_id}: {e}")
         return {'error': str(e)}
 
-def upload_video(credentials, video_file, metadata):
+def upload_video(credentials, video_filepath, metadata):
     try:
         youtube = build('youtube', 'v3', credentials=credentials)
         body = {
@@ -206,15 +209,12 @@ def upload_video(credentials, video_file, metadata):
         if metadata.get('publish_at'):
             body['status']['publishAt'] = metadata['publish_at'].isoformat(timespec='seconds') + "Z"
         
-        temp_dir = "/tmp" if os.path.exists("/tmp") else "tmp"
-        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
-        temp_filepath = os.path.join(temp_dir, video_file.filename)
-        video_file.save(temp_filepath)
-
+        media_body = MediaFileUpload(video_filepath, chunksize=-1, resumable=True)
+        
         request = youtube.videos().insert(
             part="snippet,status",
             body=body,
-            media_body=MediaFileUpload(temp_filepath, chunksize=-1, resumable=True)
+            media_body=media_body
         )
         response = None
         while response is None:
@@ -222,28 +222,22 @@ def upload_video(credentials, video_file, metadata):
             if status:
                 logging.info(f"Uploaded {int(status.progress() * 100)}%.")
         
-        os.remove(temp_filepath)
-        logging.info(f"Temporary file {temp_filepath} removed.")
         return response
     except Exception as e:
         logging.error(f"Could not upload video: {e}")
         return {'error': str(e)}
 
-def set_video_thumbnail(credentials, video_id, image_file):
+def set_video_thumbnail(credentials, video_id, image_filepath):
     try:
         youtube = build('youtube', 'v3', credentials=credentials)
-        temp_dir = "/tmp" if os.path.exists("/tmp") else "tmp"
-        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
-        temp_filepath = os.path.join(temp_dir, image_file.filename)
-        image_file.save(temp_filepath)
+        
+        media_body = MediaFileUpload(image_filepath)
         
         request = youtube.thumbnails().set(
             videoId=video_id,
-            media_body=MediaFileUpload(temp_filepath)
+            media_body=media_body
         )
         response = request.execute()
-        os.remove(temp_filepath)
-        logging.info(f"Temporary thumbnail file {temp_filepath} removed.")
         return response
     except Exception as e:
         logging.error(f"Could not set thumbnail for video {video_id}: {e}")

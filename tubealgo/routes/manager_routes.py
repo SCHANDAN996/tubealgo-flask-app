@@ -1,12 +1,15 @@
-# Filepath: tubealgo/routes/manager_routes.py
+# tubealgo/routes/manager_routes.py
+
 import os
 import datetime
 import re
-from datetime import timedelta
-from flask import Blueprint, render_template, request, flash, redirect, url_for, session, jsonify, abort
+import threading
+import json
+from datetime import timedelta, datetime
+from flask import Blueprint, render_template, request, flash, redirect, url_for, session, jsonify, abort, current_app
 from flask_login import login_required, current_user
-from google.oauth2.credentials import Credentials
 from google.auth.exceptions import RefreshError
+from google.oauth2.credentials import Credentials
 from flask_wtf import FlaskForm
 from ..forms import VideoForm, UploadForm, PlaylistForm
 from ..services.youtube_manager import (
@@ -15,54 +18,74 @@ from ..services.youtube_manager import (
     create_playlist, get_single_playlist, update_playlist,
     get_competitors_playlists
 )
-from ..services.openai_service import generate_titles_and_tags, generate_description, generate_playlist_suggestions
-from ..decorators import check_limits
-from ..models import get_setting, log_system_event # <-- log_system_event को इम्पोर्ट करें
+from ..services.ai_service import generate_titles_and_tags, generate_description, generate_playlist_suggestions
+from ..decorators import check_limits, RateLimitExceeded
+from ..models import get_setting, log_system_event, SubscriptionPlan
+from .utils import get_credentials
 
 manager_bp = Blueprint('manager', __name__, url_prefix='/manage')
+
+
+def _upload_to_youtube_in_background(app, creds_json, video_filepath, thumbnail_filepath, metadata):
+    with app.app_context():
+        try:
+            print("BACKGROUND TASK: Started uploading to YouTube.")
+            creds = Credentials.from_authorized_user_info(json.loads(creds_json))
+            
+            upload_result = upload_video(creds, video_filepath, metadata)
+
+            if 'error' in upload_result:
+                log_system_event("Background YouTube upload failed", "ERROR", details=upload_result)
+                return
+
+            video_id = upload_result.get('id')
+            print(f"BACKGROUND TASK: Video uploaded to YouTube with ID: {video_id}")
+
+            if thumbnail_filepath:
+                thumb_result = set_video_thumbnail(creds, video_id, thumbnail_filepath)
+                if 'error' in thumb_result:
+                    log_system_event("Background thumbnail upload failed", "ERROR", details=thumb_result)
+                else:
+                    print(f"BACKGROUND TASK: Thumbnail set for video ID: {video_id}")
+        
+        except Exception as e:
+            log_system_event("Exception in background upload task", "ERROR", details=str(e))
+        
+        finally:
+            if os.path.exists(video_filepath):
+                os.remove(video_filepath)
+                print(f"BACKGROUND TASK: Deleted temp video file: {video_filepath}")
+            if thumbnail_filepath and os.path.exists(thumbnail_filepath):
+                os.remove(thumbnail_filepath)
+                print(f"BACKGROUND TASK: Deleted temp thumbnail file: {thumbnail_filepath}")
+
 
 @manager_bp.route('/')
 @login_required
 def index():
     return redirect(url_for('manager.manage_videos'))
 
-def get_credentials():
-    creds_data = session.get('credentials')
-    if not creds_data or 'token' not in creds_data or 'refresh_token' not in creds_data:
-        return None
-    return Credentials(**creds_data)
-
 def handle_api_error(error_dict):
-    """Parses API errors, logs them, and flashes a user-friendly message."""
     if isinstance(error_dict, dict) and 'error' in error_dict:
         error_message = str(error_dict['error'])
-        
-        # === YAHAN BADLAV KIYA GAYA HAI ===
         if 'quotaExceeded' in error_message:
-            # Log the critical error for the admin
             log_system_event(
                 message="YouTube API quota has been exceeded.",
                 log_type='QUOTA_EXCEEDED',
                 details={'error': error_message}
             )
-            # Show a generic message to the user
             flash('Something went wrong on our end. Our team has been notified and we are working on it. Please try again later.', 'error')
-
         elif 'invalid_grant' in error_message:
-             flash('Your permission has expired. Please grant permission again to manage your YouTube account.', 'warning')
-             return redirect(url_for('auth.google_login'))
+            flash('Your permission has expired. Please grant permission again to manage your YouTube account.', 'warning')
+            return redirect(url_for('auth.google_login'))
         else:
-            # For other errors, show a more specific message but still log it
             log_system_event(
                 message="An unhandled API error occurred in YT Manager.",
                 log_type='ERROR',
                 details={'error': error_message, 'user_id': current_user.id}
             )
             flash(f'An API error occurred. If the problem persists, please contact support.', 'error')
-        # === YAHAN TAK ===
-
     return None
-
 
 @manager_bp.route('/videos')
 @login_required
@@ -80,7 +103,6 @@ def manage_videos():
             return redirect_response
         if video_data and 'error' not in video_data:
             videos = video_data
-
     except RefreshError:
         flash('Your permission has expired. Please grant permission to manage your YouTube videos.', 'warning')
         return redirect(url_for('auth.google_login'))
@@ -106,7 +128,6 @@ def manage_playlists():
             return redirect_response
         if playlist_data and 'error' not in playlist_data:
             playlists = playlist_data
-
     except RefreshError:
         flash('Your permission has expired. Please grant permission to manage your YouTube playlists.', 'warning')
         return redirect(url_for('auth.google_login'))
@@ -114,10 +135,9 @@ def manage_playlists():
         log_system_event(f"Unexpected error in manage_playlists: {str(e)}", 'ERROR', {'user_id': current_user.id})
         flash('An unexpected error occurred. Our team has been notified.', 'error')
     
-    form = FlaskForm() 
+    form = FlaskForm()  
     return render_template('manage_playlists.html', playlists=playlists, form=form)
 
-# ... (बाकी के फंक्शन्स में कोई बदलाव नहीं)
 @manager_bp.route('/playlists/create', methods=['GET', 'POST'])
 @login_required
 def create_playlist_route():
@@ -152,20 +172,38 @@ def create_playlist_route():
 
 @manager_bp.route('/playlists/generate-ideas', methods=['POST'])
 @login_required
-@check_limits(feature='ai_generation')
 def generate_playlist_ideas():
-    creds = get_credentials()
-    if not creds:
-        return jsonify({'error': 'Please connect your Google Account first.'}), 400
+    try:
+        @check_limits(feature='ai_generation')
+        def do_generation():
+            creds = get_credentials()
+            if not creds:
+                return jsonify({'error': 'Please connect your Google Account first.'}), 400
 
-    user_playlists = get_user_playlists(creds)
-    user_playlist_titles = [p['title'] for p in user_playlists if 'title' in p]
+            if current_user.competitors.count() == 0:
+                return jsonify({
+                    'error': 'no_competitors', 
+                    'message': 'Add competitors to get AI-powered playlist suggestions.',
+                    'action_url': url_for('competitor.competitors', next=url_for('manager.manage_playlists'))
+                }), 400
 
-    competitor_video_titles = get_competitors_playlists(current_user)
-    
-    suggestions = generate_playlist_suggestions(current_user, user_playlist_titles, competitor_video_titles)
-    
-    return jsonify(suggestions)
+            plan = SubscriptionPlan.query.filter_by(plan_id=current_user.subscription_plan).first() or SubscriptionPlan.query.filter_by(plan_id='free').first()
+            suggestion_limit = plan.playlist_suggestions_limit if plan else 3
+            user_playlists = get_user_playlists(creds)
+            user_playlist_titles = [p['title'] for p in user_playlists if 'title' in p]
+            
+            competitor_video_titles_or_error = get_competitors_playlists(current_user)
+            
+            if isinstance(competitor_video_titles_or_error, dict) and 'error' in competitor_video_titles_or_error:
+                return jsonify(competitor_video_titles_or_error), 500
+
+            competitor_video_titles = competitor_video_titles_or_error
+
+            suggestions = generate_playlist_suggestions(current_user, user_playlist_titles, competitor_video_titles, limit=suggestion_limit)
+            return jsonify(suggestions)
+        return do_generation()
+    except RateLimitExceeded as e:
+        return jsonify({'error': {'details': str(e)}}), 429
 
 @manager_bp.route('/playlists/edit/<playlist_id>', methods=['GET', 'POST'])
 @login_required
@@ -231,26 +269,17 @@ def edit_video(video_id):
     
     form = VideoForm(obj=video_details['snippet'])
     
-    is_scheduled = video_details['status'].get('publishAt') and datetime.datetime.fromisoformat(video_details['status']['publishAt'].replace('Z', '')) > datetime.datetime.utcnow()
+    is_scheduled = video_details['status'].get('publishAt') and datetime.fromisoformat(video_details['status']['publishAt'].replace('Z', '')) > datetime.utcnow()
     current_visibility = 'schedule' if is_scheduled else video_details['status'].get('privacyStatus', 'private')
 
     if request.method == 'GET':
         form.tags.data = ", ".join(video_details['snippet'].get('tags', []))
         if is_scheduled:
-            form.publish_at.data = datetime.datetime.fromisoformat(video_details['status']['publishAt'].replace('Z', ''))
+            form.publish_at.data = datetime.fromisoformat(video_details['status']['publishAt'].replace('Z', ''))
 
     if form.validate_on_submit():
-        visibility_choice = request.form.get('visibility_choice')
-        publish_at_time_str = request.form.get('publish_at')
-        publish_at_time = None
-        if visibility_choice == 'schedule' and publish_at_time_str:
-            try:
-                publish_at_time = datetime.datetime.fromisoformat(publish_at_time_str)
-            except (ValueError, TypeError):
-                try:
-                    publish_at_time = datetime.datetime.strptime(publish_at_time_str, "%Y-%m-%dT%H:%M:%S")
-                except (ValueError, TypeError):
-                    publish_at_time = None
+        visibility_choice = form.visibility.data
+        publish_at_time = form.publish_at.data
 
         final_visibility = 'private' if visibility_choice == 'schedule' and publish_at_time else visibility_choice
 
@@ -258,7 +287,7 @@ def edit_video(video_id):
             creds, video_id, 
             form.title.data, 
             form.description.data, 
-            [tag.strip() for tag in form.tags.data.split(',') if tag.strip()],
+            [tag.strip() for tag in request.form.get('tags', '').split(',') if tag.strip()],
             final_visibility,
             publish_at_time
         )
@@ -291,107 +320,137 @@ def edit_video(video_id):
 def upload():
     if not get_setting('feature_video_upload', True):
         abort(404)
+    
     form = UploadForm()
     creds = get_credentials()
+
     if not creds:
+        if request.method == 'POST':
+            return jsonify({'error': 'Authentication expired. Please reconnect your Google account.'}), 401
         flash('Please connect your Google account to upload videos.', 'warning')
         return redirect(url_for('auth.google_login'))
 
-    if form.validate_on_submit():
-        visibility_choice = request.form.get('visibility_choice')
-        publish_at_time_str = request.form.get('publish_at')
-        publish_at_time = None
+    if request.method == 'POST':
+        form = UploadForm()
 
-        if visibility_choice == 'schedule' and publish_at_time_str:
-            try:
-                publish_at_time = datetime.datetime.fromisoformat(publish_at_time_str)
-            except (ValueError, TypeError):
-                try:
-                    publish_at_time = datetime.datetime.strptime(publish_at_time_str, "%Y-%m-%dT%H:%M:%S")
-                except (ValueError, TypeError):
-                    publish_at_time = None
-
-        final_visibility = 'private' if visibility_choice == 'schedule' and publish_at_time else visibility_choice
-
-        metadata = {
-            "title": form.title.data,
-            "description": form.description.data,
-            "tags": [tag.strip() for tag in form.tags.data.split(',') if tag.strip()],
-            "privacy_status": final_visibility,
-            "publish_at": publish_at_time,
-            "category_id": request.form.get('category_id', '22')
-        }
-        
-        video_file = form.video_file.data
-        upload_result = upload_video(creds, video_file, metadata)
-        
-        if 'error' in upload_result:
-            flash(f"Error uploading video: {upload_result['error']}", 'error')
-        else:
-            video_id = upload_result.get('id')
-            flash(f"Video uploaded successfully! Watch it here: https://youtu.be/{video_id}", 'success')
-            
+        if form.validate_on_submit():
+            video_file = form.video_file.data
             thumbnail_file = form.thumbnail.data
+            
+            upload_folder = os.path.join(current_app.instance_path, 'uploads')
+            os.makedirs(upload_folder, exist_ok=True)
+            
+            video_filename = f"{datetime.utcnow().timestamp()}_{video_file.filename}"
+            video_filepath = os.path.join(upload_folder, video_filename)
+            video_file.save(video_filepath)
+
+            thumbnail_filepath = None
             if thumbnail_file and thumbnail_file.filename:
-                thumb_result = set_video_thumbnail(creds, video_id, thumbnail_file)
-                if 'error' in thumb_result:
-                    flash(f"Note: Could not set thumbnail. This may happen if the video is a Short. Error: {thumb_result['error']}", 'warning')
-                else:
-                    flash('Thumbnail set successfully!', 'success')
-        
-        return redirect(url_for('manager.manage_videos'))
-    
+                thumb_filename = f"{datetime.utcnow().timestamp()}_{thumbnail_file.filename}"
+                thumbnail_filepath = os.path.join(upload_folder, thumb_filename)
+                thumbnail_file.save(thumbnail_filepath)
+
+            visibility_choice = form.visibility.data
+            publish_at_str = request.form.get('publish_at')
+            publish_at_time = None
+            if visibility_choice == 'schedule' and publish_at_str:
+                try:
+                    publish_at_time = datetime.fromisoformat(publish_at_str)
+                except ValueError:
+                    return jsonify({'error': 'Invalid schedule date format.'}), 400
+            
+            final_visibility = 'private' if visibility_choice == 'schedule' and publish_at_time else visibility_choice
+
+            metadata = {
+                "title": form.title.data,
+                "description": form.description.data,
+                "tags": [tag.strip() for tag in request.form.get('tags', '').split(',') if tag.strip()],
+                "privacy_status": final_visibility,
+                "publish_at": publish_at_time
+            }
+            
+            thread = threading.Thread(
+                target=_upload_to_youtube_in_background,
+                args=(current_app._get_current_object(), creds.to_json(), video_filepath, thumbnail_filepath, metadata)
+            )
+            thread.start()
+
+            return jsonify({
+                'success': True, 
+                'message': 'Upload Started! We will process it in the background.', 
+                'redirect_url': url_for('manager.manage_videos')
+            })
+        else:
+            error_message = "Invalid form data. Please check all fields."
+            if form.errors:
+                first_error_key = next(iter(form.errors))
+                error_message = f"{first_error_key.replace('_', ' ').title()}: {form.errors[first_error_key][0]}"
+
+            return jsonify({'error': error_message, 'details': form.errors}), 400
+
     return render_template('upload_video.html', form=form, has_competitors=current_user.competitors.count() > 0)
+
 
 @manager_bp.route('/api/generate-titles', methods=['POST'])
 @login_required
-@check_limits(feature='ai_generation')
 def api_generate_titles():
-    if current_user.competitors.count() == 0:
-        return jsonify({'error': 'no_competitors', 'message': 'Please add competitors for better suggestions.'}), 400
-    data = request.json
-    topic = data.get('topic')
-    if not topic:
-        return jsonify({'error': 'bad_request', 'message': 'Topic is required.'}), 400
-    results = generate_titles_and_tags(current_user, topic)
-    if 'titles' in results:
-        return jsonify({'titles': results['titles']})
-    if 'error' in results and 'message' not in results:
-        results['message'] = results['error']
-    return jsonify(results)
+    try:
+        @check_limits(feature='ai_generation')
+        def do_api_generation():
+            data = request.json
+            topic = data.get('topic')
+            if not topic:
+                return jsonify({'error': 'bad_request', 'message': 'Topic is required.'}), 400
+            results = generate_titles_and_tags(current_user, topic)
+            return jsonify(results)
+        return do_api_generation()
+    except RateLimitExceeded as e:
+        return jsonify({'error': str(e), 'details': str(e)}), 429
 
 @manager_bp.route('/api/generate-tags', methods=['POST'])
 @login_required
-@check_limits(feature='ai_generation')
 def api_generate_tags():
-    if current_user.competitors.count() == 0:
-        return jsonify({'error': 'no_competitors', 'message': 'Please add competitors for better suggestions.'}), 400
-    data = request.json
-    topic = data.get('topic')
-    exclude_tags = data.get('exclude_tags', [])
-    if not topic:
-        return jsonify({'error': 'bad_request', 'message': 'Topic is required.'}), 400
-    results = generate_titles_and_tags(current_user, topic, exclude_tags=exclude_tags)
-    if 'tags' in results and current_user.channel and current_user.channel.channel_title:
-        channel_name_tag = current_user.channel.channel_title
-        if channel_name_tag.lower() not in [tag.lower() for tag in results['tags']]:
-            results['tags'].insert(0, channel_name_tag)
-    if 'tags' in results:
-        return jsonify({'tags': results['tags']})
-    if 'error' in results and 'message' not in results:
-        results['message'] = results['error']
-    return jsonify(results)
+    try:
+        @check_limits(feature='ai_generation')
+        def do_api_generation():
+            data = request.json
+            topic = data.get('topic')
+            exclude_tags = data.get('exclude_tags', [])
+            if not topic:
+                return jsonify({'error': 'bad_request', 'message': 'Topic is required.'}), 400
+            
+            results = generate_titles_and_tags(current_user, topic, exclude_tags=exclude_tags)
+
+            if 'tags' in results and current_user.channel and current_user.channel.channel_title:
+                channel_name_tag = current_user.channel.channel_title
+                
+                if isinstance(results.get('tags'), dict) and 'main_keywords' in results['tags']:
+                    all_tags_lower = [tag.lower() for cat_tags in results['tags'].values() for tag in cat_tags]
+                    
+                    if channel_name_tag.lower() not in all_tags_lower:
+                        results['tags']['main_keywords'].insert(0, channel_name_tag)
+
+            return jsonify(results)
+        return do_api_generation()
+    except RateLimitExceeded as e:
+        return jsonify({'error': str(e), 'details': str(e)}), 429
 
 @manager_bp.route('/api/generate-description', methods=['POST'])
 @login_required
-@check_limits(feature='ai_generation')
 def api_generate_description():
-    data = request.json
-    topic = data.get('topic')
-    title = data.get('title')
-    if not topic or not title:
-        return jsonify({'error': 'bad_request', 'message': 'Topic and title are required.'}), 400
-    result = generate_description(current_user, topic, title)
-    if 'error' in result and 'message' not in result:
-        result['message'] = result['error']
-    return jsonify(result)
+    try:
+        @check_limits(feature='ai_generation')
+        def do_api_generation():
+            data = request.json
+            topic = data.get('topic')
+            title = data.get('title')
+            language = data.get('language', 'English')
+            
+            if not topic or not title:
+                return jsonify({'error': 'Topic and title are required.'}), 400
+                
+            result = generate_description(current_user, topic, title, language)
+            return jsonify(result)
+        return do_api_generation()
+    except RateLimitExceeded as e:
+        return jsonify({'error': str(e), 'details': str(e)}), 429

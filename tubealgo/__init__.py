@@ -1,5 +1,3 @@
-# Filepath: tubealgo/__init__.py
-
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -48,19 +46,19 @@ def seed_plans():
         free_plan = SubscriptionPlan(
             plan_id='free', name='Free', price=0, slashed_price=None,
             competitors_limit=2, keyword_searches_limit=5, ai_generations_limit=3,
-            has_discover_tools=False, has_ai_suggestions=False
+            has_discover_tools=False, has_ai_suggestions=False, playlist_suggestions_limit=3
         )
         
         creator_plan = SubscriptionPlan(
             plan_id='creator', name='Creator', price=39900, slashed_price=79900,
             competitors_limit=10, keyword_searches_limit=50, ai_generations_limit=30,
-            has_discover_tools=True, has_ai_suggestions=True
+            has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=10
         )
         
         pro_plan = SubscriptionPlan(
             plan_id='pro', name='Pro', price=99900, slashed_price=199900,
             competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1,
-            has_discover_tools=True, has_ai_suggestions=True
+            has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=-1
         )
         
         db.session.add(free_plan)
@@ -89,11 +87,9 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['MEASUREMENT_ID'] = os.environ.get('MEASUREMENT_ID')
 
-    # === CASHFREE CONFIGURATION ADDED HERE ===
-    app.config['CASHFREE_APP_ID'] = os.environ.get('CASHFREE_APP_ID')
-    app.config['CASHFREE_SECRET_KEY'] = os.environ.get('CASHFREE_SECRET_KEY') 
+    app.config['CASHFREE_APP_ID'] = os.environ.get('CASHFREE_APP_ID')   
+    app.config['CASHFREE_SECRET_KEY'] = os.environ.get('CASHFREE_SECRET_KEY')   
     app.config['CASHFREE_ENV'] = os.environ.get('CASHFREE_ENV', 'PROD')
-    # === END OF CASHFREE CONFIGURATION ===
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -103,7 +99,6 @@ def create_app():
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = "error"
 
-    # Blueprints
     from .auth import auth as auth_blueprint
     app.register_blueprint(auth_blueprint, url_prefix='/')
     from .routes.core_routes import core_bp
@@ -115,7 +110,7 @@ def create_app():
     app.register_blueprint(competitor_bp, url_prefix='/')
     
     from .routes.analysis_routes import analysis_bp
-    app.register_blueprint(analysis_bp, url_prefix='/') 
+    app.register_blueprint(analysis_bp, url_prefix='/')   
     
     from .routes.api_routes import api_bp
     app.register_blueprint(api_bp)
@@ -131,9 +126,16 @@ def create_app():
     from .routes.manager_routes import manager_bp
     app.register_blueprint(manager_bp)
 
+    from .routes.planner_routes import planner_bp
+    app.register_blueprint(planner_bp)
+
+    from .routes.goal_routes import goal_bp
+    app.register_blueprint(goal_bp)
+
     from . import models
-    from .jobs import check_for_new_videos
+    from .jobs import check_for_new_videos, take_daily_snapshots, update_all_dashboards
     from .telegram_bot_handler import process_updates
+    from .services.ai_service import initialize_ai_clients
 
     @app.context_processor
     def inject_now_and_settings():
@@ -141,18 +143,38 @@ def create_app():
         return {'now': datetime.utcnow, 'get_setting': get_setting}
 
     with app.app_context():
+        # Step 1: Create all tables first.
         db.create_all()
+        
+        # Step 2: Seed initial data like plans.
         seed_plans()
+
+        # Step 3: Now that tables exist, initialize AI clients which might read from them.
+        print("Initializing AI clients within app context...")
+        initialize_ai_clients()
 
     scheduler = BackgroundScheduler(daemon=True)
     if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        # Job 1: Competitor video check (every hour)
+        
+        scheduler.add_job(
+            func=lambda: take_daily_snapshots(app),
+            trigger='interval',
+            hours=24
+        )
+
         scheduler.add_job(
             func=lambda: check_for_new_videos(app),
             trigger='interval',
             hours=1
         )
-        # Job 2: Telegram command polling (every 10 seconds)
+        
+        scheduler.add_job(
+            func=lambda: update_all_dashboards(app),
+            trigger='interval',
+            hours=4,
+            id='update_all_dashboards_job'
+        )
+
         scheduler.add_job(
             func=lambda: process_updates(app),
             trigger='interval',

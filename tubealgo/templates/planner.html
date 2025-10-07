@@ -1,0 +1,90 @@
+{% extends "app_layout.html" %}
+
+{% block app_content %}
+<div x-data="contentPlanner()">
+    <div class="flex flex-col sm:flex-row justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-foreground font-display">Content Planner</h1>
+            <p class="text-muted-foreground mt-1">Organize your video ideas from concept to completion.</p>
+        </div>
+    </div>
+
+    <div class="bg-card p-6 rounded-xl border overflow-x-auto">
+        <div class="flex space-x-4 min-w-[1000px]">
+            <template x-for="column in plannerColumns" :key="column.id">
+                <div class="w-1/5 bg-secondary rounded-lg p-3 flex flex-col">
+                    <h3 class="font-semibold text-sm text-foreground mb-3 flex-shrink-0" x-text="column.title"></h3>
+                    <div class="space-y-2 min-h-[300px] flex-grow" :data-status="column.id" x-ref="plannerColumn">
+                        <template x-for="idea in plannerData[column.id]" :key="idea.id">
+                            <div @click="editIdea(idea, column.id)" class="bg-card p-3 rounded-md shadow-sm text-sm cursor-pointer group relative" :data-id="idea.id">
+                                <span x-text="idea.title"></span>
+                                <button @click.stop="deleteIdea(idea.id, column.id)" class="absolute top-1 right-1 w-5 h-5 bg-secondary rounded-full text-muted-foreground hover:bg-destructive hover:text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
+                            </div>
+                        </template>
+                    </div>
+                    <template x-if="column.id === 'idea'">
+                        <div class="mt-2 flex-shrink-0">
+                            <input type="text" x-model="newIdeaTitle" @keydown.enter.prevent="addNewIdea" placeholder="+ Add an idea" class="w-full bg-background text-sm p-2 rounded border border-input focus:ring-primary focus:outline-none">
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <div x-show="isEditModalOpen" x-transition class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" x-cloak>
+        <div @click.away="isEditModalOpen = false" class="bg-card rounded-xl shadow-xl w-full max-w-lg">
+            <div class="p-5 border-b"><h3 class="text-lg font-bold">Edit Idea</h3></div>
+            <div class="p-6"><textarea x-model="editingIdea.title" class="w-full bg-background border border-input rounded-lg p-3" rows="3"></textarea></div>
+            <div class="p-4 bg-secondary/50 rounded-b-xl flex justify-end gap-3">
+                <button @click="isEditModalOpen = false" class="px-5 py-2 rounded-lg text-sm font-semibold bg-secondary text-secondary-foreground hover:bg-border">Cancel</button>
+                <button @click="saveIdea()" class="px-5 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function contentPlanner() {
+        return {
+            plannerData: { idea: [], scripting: [], filming: [], editing: [], scheduled: [] },
+            newIdeaTitle: '',
+            plannerColumns: [
+                { id: 'idea', title: '💡 Ideas' }, { id: 'scripting', title: '✍️ Scripting' },
+                { id: 'filming', title: '🎬 Filming' }, { id: 'editing', title: '✂️ Editing' },
+                { id: 'scheduled', title: '🗓️ Scheduled' }
+            ],
+            isEditModalOpen: false, editingIdea: null, editingIdeaStatus: null,
+            init() {
+                this.fetchIdeas();
+            },
+            fetchIdeas() {
+                fetch('{{ url_for("planner.get_ideas") }}').then(res => res.json()).then(data => {
+                    this.plannerData = data;
+                    this.$nextTick(() => this.initPlanner());
+                });
+            },
+            addNewIdea() { /* ... (यह फंक्शन वैसा ही रहेगा) ... */ },
+            deleteIdea(id, status) { /* ... (यह फंक्शन वैसा ही रहेगा) ... */ },
+            editIdea(idea, status) { /* ... (यह फंक्शन वैसा ही रहेगा) ... */ },
+            saveIdea() { /* ... (यह फंक्शन वैसा ही रहेगा) ... */ },
+            initPlanner() {
+                this.$refs.plannerColumn.forEach(columnEl => {
+                    if (columnEl._sortable) columnEl._sortable.destroy();
+                    new Sortable(columnEl, {
+                        group: 'planner', animation: 150, ghostClass: 'bg-primary/20',
+                        onEnd: () => {
+                            let payload = {};
+                            this.plannerColumns.forEach(col => {
+                                const container = this.$el.querySelector(`[data-status="${col.id}"]`);
+                                payload[col.id] = Array.from(container.children).map(child => child.dataset.id);
+                            });
+                            fetch('{{ url_for("planner.move_idea") }}', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                        }
+                    });
+                });
+            }
+        }
+    }
+</script>
+{% endblock %}

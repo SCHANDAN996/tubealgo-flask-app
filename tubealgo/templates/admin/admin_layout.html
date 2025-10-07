@@ -6,6 +6,7 @@
     <title>TubeAlgo Admin - {% block title %}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-secondary">
@@ -40,7 +41,10 @@
                     <i class="fa-solid fa-broom fa-fw mr-3"></i> Cache
                 </a>
                 <a href="{{ url_for('admin.site_settings') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.site_settings' %}bg-secondary text-primary{% endif %}">
-                    <i class="fa-solid fa-cog fa-fw mr-3"></i> Settings
+                    <i class="fa-solid fa-cog fa-fw mr-3"></i> Site Settings
+                </a>
+                <a href="{{ url_for('admin.ai_settings') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.ai_settings' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-robot fa-fw mr-3"></i> AI Settings
                 </a>
             </nav>
             <div class="p-4 border-t">

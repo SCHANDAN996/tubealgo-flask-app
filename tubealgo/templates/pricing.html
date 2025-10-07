@@ -18,16 +18,17 @@
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>2 Competitors</li>
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>5 Keyword Searches/day</li>
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>3 AI Generations/day</li>
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>3 AI Playlist Ideas</li>
                 </ul>
-                <a href="{{ url_for('auth.signup') }}" class="mt-8 w-full text-center bg-secondary text-secondary-foreground py-3 rounded-lg font-semibold hover:bg-border">Get Started</a>
+                <a href="{{ url_for('auth.signup') }}" class="mt-8 block w-full text-center bg-secondary text-secondary-foreground py-3.5 rounded-lg font-semibold hover:bg-border text-base transition-transform hover:scale-105">Get Started</a>
             </div>
 
             {% for plan in plans %}
-            <div class="bg-card p-8 rounded-xl border-2 flex flex-col relative {% if plan.plan_id == 'creator' %}border-primary shadow-lg{% endif %}">
-                {% if plan.plan_id == 'creator' %}
+            <div class="bg-card p-8 rounded-xl border-2 flex flex-col relative {% if plan.is_popular %}border-primary shadow-lg{% else %}border-border{% endif %}">
+                {% if plan.is_popular %}
                 <div class="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2"><span class="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full uppercase">Most Popular</span></div>
                 {% endif %}
-                <h3 class="text-2xl font-bold {% if plan.plan_id == 'creator' %}text-primary{% endif %}">{{ plan.name }}</h3>
+                <h3 class="text-2xl font-bold {% if plan.is_popular %}text-primary{% endif %}">{{ plan.name }}</h3>
                 <p class="text-muted-foreground mt-2 h-12">
                     {% if plan.plan_id == 'creator' %}For creators ready to grow faster.
                     {% elif plan.plan_id == 'pro' %}For professionals and agencies.
@@ -44,15 +45,16 @@
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.competitors_limit if plan.competitors_limit != -1 else 'Unlimited' }} Competitors</li>
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.keyword_searches_limit if plan.keyword_searches_limit != -1 else 'Unlimited' }} Searches/day</li>
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.ai_generations_limit if plan.ai_generations_limit != -1 else 'Unlimited' }} AI Generations/day</li>
+                    <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.playlist_suggestions_limit if plan.playlist_suggestions_limit != -1 else 'Unlimited' }} AI Playlist Ideas</li>
                     {% if plan.has_ai_suggestions %}<li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>AI Video Suggestions</li>{% endif %}
                     {% if plan.has_discover_tools %}<li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>Discover Tools</li>{% endif %}
                 </ul>
                 <button 
                     data-plan-id="{{ plan.plan_id }}"
-                    class="payment-btn mt-8 w-full py-3 rounded-lg font-semibold transition-colors 
-                            {% if plan.plan_id == 'creator' %}bg-primary text-primary-foreground hover:bg-primary/90
-                            {% else %}bg-secondary text-secondary-foreground hover:bg-border
-                            {% endif %}">
+                    class="payment-btn mt-8 w-full text-center py-3.5 rounded-lg font-semibold text-base transition-transform hover:scale-105
+                           {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
+                           {% else %}bg-secondary text-secondary-foreground hover:bg-border
+                           {% endif %}">
                     Upgrade Now
                 </button>
             </div>
@@ -73,12 +75,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             {% if current_user.is_authenticated %}
                 const planId = this.dataset.planId;
-                const originalButtonText = this.innerHTML;
                 this.innerHTML = 'Processing...';
                 this.disabled = true;
 
                 try {
-                    // 1. अपने सर्वर पर ऑर्डर बनाएँ
                     const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -91,35 +91,27 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     
                     const orderData = await orderResponse.json();
-
-                    // 2. Cashfree SDK को शुरू करें
                     const cashfree = new Cashfree();
                     
-                    // 3. चेकआउट पॉपअप खोलें
-                    cashfree.checkout({
-                        paymentSessionId: orderData.payment_session_id
-                    }).then((result) => {
+                    let checkoutOptions = {
+                        paymentSessionId: orderData.payment_session_id,
+                        returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
+                    }
+                    
+                    cashfree.checkout(checkoutOptions).then(function(result) {
                         if (result.error) {
-                            console.error("Cashfree Checkout Error:", result.error);
+                            console.error("Checkout error:", result.error);
                             alert('Payment failed: ' + result.error.message);
-                            // बटन को रीसेट करें
-                            this.innerHTML = originalButtonText;
-                            this.disabled = false;
-                        }
-                        if (result.redirect) {
-                            // पेमेंट के बाद return_url पर अपने आप रीडायरेक्ट हो जाएगा।
-                            console.log("Redirecting to verification...");
                         }
                     });
                     
                 } catch (error) {
-                    console.error('Payment Initiation Error:', error);
-                    alert(error.message || 'Could not initiate payment. Please try again.');
-                    this.innerHTML = originalButtonText;
+                    console.error('Payment Error:', error);
+                    alert('Could not initiate payment. Please try again.');
+                    this.innerHTML = 'Upgrade Now';
                     this.disabled = false;
                 }
             {% else %}
-                // अगर यूज़र लॉग इन नहीं है, तो साइनअप पेज पर भेजें
                 window.location.href = "{{ url_for('auth.signup') }}";
             {% endif %}
         });

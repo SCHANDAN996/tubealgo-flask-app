@@ -1,4 +1,4 @@
-# Filepath: tubealgo/routes/api_routes.py
+# tubealgo/routes/api_routes.py
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
@@ -15,11 +15,10 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 def get_full_competitor_package(competitor_id, force_refresh=False):
     """
-    Fetches ALL data for a competitor for both competitor card and deep analysis page.
-    This is the new central function for getting competitor data.
-    It now fetches ALL videos at once to save API quota on pagination.
+    Fetches ALL data for a competitor. It now gets latest videos and
+    most viewed videos separately and merges them for a complete picture.
     """
-    cache_key = f"competitor_package_v3:{competitor_id}"
+    cache_key = f"competitor_package_v4:{competitor_id}" # ভার্সন পরিবর্তন করা হয়েছে
     if not force_refresh:
         cached_data = get_from_cache(cache_key)
         if cached_data:
@@ -34,27 +33,40 @@ def get_full_competitor_package(competitor_id, force_refresh=False):
     if 'error' in details:
         return {'error': details['error']}
 
-    # 2. Fetch ALL videos (or up to a reasonable limit handled by the function)
-    # This is the MAJOR CHANGE. Instead of fetching just one page, we get all of them.
-    all_videos = get_all_channel_videos(comp.channel_id_youtube)
+    # 2. Fetch all latest videos (up to ~500)
+    latest_videos_all = get_all_channel_videos(comp.channel_id_youtube)
+    if isinstance(latest_videos_all, dict) and 'error' in latest_videos_all:
+         return {'error': latest_videos_all['error']}
+
+    # 3. Fetch all-time most viewed videos (up to 50)
+    most_viewed_data_api = get_most_viewed_videos(comp.channel_id_youtube, max_results=50)
+    most_viewed_videos_all = most_viewed_data_api.get('videos', [])
+
+    # 4. Merge and de-duplicate video lists
+    all_videos_dict = {}
+    for video in (latest_videos_all + most_viewed_videos_all):
+        if video and 'id' in video:
+            all_videos_dict[video['id']] = video
     
-    # We create the structure that the old functions returned for compatibility
+    all_videos_unique = list(all_videos_dict.values())
+
+    # 5. Create sorted lists for the frontend
     recent_videos_data = {
-        'videos': sorted(all_videos, key=lambda x: x.get('upload_date', ''), reverse=True),
-        'nextPageToken': None # No more pagination from the frontend
+        'videos': sorted(all_videos_unique, key=lambda x: x.get('upload_date', ''), reverse=True),
+        'nextPageToken': None
     }
     
     most_viewed_videos_data = {
-        'videos': sorted(all_videos, key=lambda x: x.get('view_count', 0), reverse=True),
-        'nextPageToken': None # No more pagination from the frontend
+        'videos': sorted(all_videos_unique, key=lambda x: x.get('view_count', 0), reverse=True),
+        'nextPageToken': None
     }
 
-    # 3. Fetch other details for deep analysis
+    # 6. Fetch other details
     playlists = get_channel_playlists(comp.channel_id_youtube)
-    top_tags = get_most_used_tags(comp.channel_id_youtube, video_limit=50) # Keep this limit reasonable
+    top_tags = get_most_used_tags(comp.channel_id_youtube, video_limit=50)
     category = get_channel_main_category(comp.channel_id_youtube)
 
-    # 4. Package everything into a single object
+    # 7. Package everything
     final_data = {
         'details': details,
         'recent_videos_data': recent_videos_data,

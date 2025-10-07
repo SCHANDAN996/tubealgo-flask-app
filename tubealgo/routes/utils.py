@@ -1,9 +1,11 @@
-# Filepath: tubealgo/routes/utils.py
+# tubealgo/routes/utils.py
 
 import re
 from datetime import datetime
 from tubealgo.services.youtube_fetcher import get_full_video_details, get_most_used_tags as fetcher_get_most_used_tags
 from tubealgo.services.analysis_service import analyze_comment_sentiment
+from flask import session
+from google.oauth2.credentials import Credentials
 
 def parse_duration(duration_str):
     if not duration_str: return 0, "N/A"
@@ -41,7 +43,6 @@ def get_video_info_dict(video_id):
         'days_since_upload': days_since_upload, 'views_per_day': round(views_per_day), 'sentiment': sentiment
     }
 
-# --- MODIFIED: This function is now more robust ---
 def sanitize_filename(name):
     """Removes invalid characters and emojis from a string to make it a valid filename."""
     if not name: return "Untitled"
@@ -63,3 +64,9 @@ def sanitize_filename(name):
 
 def get_most_used_tags(channel_id, video_limit=50):
     return fetcher_get_most_used_tags(channel_id, video_limit)
+
+def get_credentials():
+    creds_data = session.get('credentials')
+    if not creds_data or 'token' not in creds_data or 'refresh_token' not in creds_data:
+        return None
+    return Credentials(**creds_data)

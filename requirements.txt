@@ -27,3 +27,4 @@ SQLAlchemy
 # flask_limiter
 pytz
 cashfree-pg
+google-generativeai  

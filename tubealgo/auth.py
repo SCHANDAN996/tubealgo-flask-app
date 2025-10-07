@@ -1,5 +1,3 @@
-# Filepath: tubealgo/auth.py
-
 import os
 import secrets
 from flask import render_template, request, redirect, url_for, flash, Blueprint, session
@@ -23,12 +21,10 @@ def generate_referral_code():
 @auth.route('/connect_telegram/<telegram_chat_id>')
 @login_required
 def connect_telegram(telegram_chat_id):
-    """Link a telegram chat_id to the currently logged in user."""
     if not telegram_chat_id or not telegram_chat_id.isdigit():
         flash('Invalid Telegram connection link.', 'error')
         return redirect(url_for('settings.telegram_settings'))
 
-    # Check if this chat_id is already taken by another user
     existing_user = User.query.filter(User.id != current_user.id, User.telegram_chat_id == telegram_chat_id).first()
     if existing_user:
         flash('This Telegram account is already linked to another user.', 'error')
@@ -49,23 +45,39 @@ def connect_telegram(telegram_chat_id):
 def signup():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard.dashboard'))
+        
     form = SignupForm()
     if form.validate_on_submit():
         existing_user = User.query.filter_by(email=form.email.data.lower()).first()
         if existing_user:
             flash('This email is already registered.', 'error')
             return redirect(url_for('auth.signup'))
+            
         new_user = User(email=form.email.data.lower(), referral_code=generate_referral_code())
         new_user.set_password(form.password.data)
+
+        # --- यहाँ नया लॉजिक जोड़ा गया है ---
+        # पहले एडमिन को स्वचालित रूप से सेट करने के लिए जाँच करें
+        is_first_user = User.query.count() == 0
+        if is_first_user:
+            new_user.is_admin = True
+            flash('Congratulations! You are the first user and have been granted admin privileges.', 'success')
+        # --- बदलाव खत्म ---
+
         if 'referral_code' in session:
             referrer = User.query.filter_by(referral_code=session['referral_code']).first()
             if referrer:
                 new_user.referred_by = session['referral_code']
             session.pop('referral_code', None)
+            
         db.session.add(new_user)
         db.session.commit()
-        flash('Your account has been created successfully.', 'success')
+        
+        if not is_first_user:
+            flash('Your account has been created successfully.', 'success')
+            
         return redirect(url_for('auth.login'))
+        
     return render_template('signup.html', form=form)
 
 @auth.route('/login', methods=['GET', 'POST'])
@@ -74,17 +86,14 @@ def login():
         return redirect(url_for('dashboard.dashboard'))
     form = LoginForm()
     if form.validate_on_submit():
-        @limiter.limit("10 per 10 minutes")
-        def login_attempt():
-            user = User.query.filter_by(email=form.email.data.lower()).first()
-            if user and user.check_password(form.password.data):
-                login_user(user, remember=form.remember_me.data)
-                next_page = request.args.get('next')
-                return redirect(next_page or url_for('dashboard.dashboard'))
-            else:
-                flash('Login unsuccessful. Please check your email and password.', 'error')
-                return render_template('login.html', form=form)
-        return login_attempt()
+        user = User.query.filter_by(email=form.email.data.lower()).first()
+        if user and user.check_password(form.password.data):
+            login_user(user, remember=form.remember_me.data)
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('dashboard.dashboard'))
+        else:
+            flash('Login unsuccessful. Please check your email and password.', 'error')
+            return render_template('login.html', form=form)
     return render_template('login.html', form=form)
 
 @auth.route('/logout')
@@ -104,7 +113,6 @@ def google_login():
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
-            # redirect_uris is removed from here to make it dynamic
         }
     }
     flow = Flow.from_client_config(CLIENT_SECRETS_FILE, scopes=SCOPES, redirect_uri=url_for('auth.google_callback', _external=True))
@@ -125,7 +133,6 @@ def google_callback():
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
-            # redirect_uris is removed from here to make it dynamic
         }
     }
     flow = Flow.from_client_config(CLIENT_SECRETS_FILE, scopes=SCOPES, state=state, redirect_uri=url_for('auth.google_callback', _external=True))
@@ -156,10 +163,15 @@ def google_callback():
         
     user = User.query.filter_by(email=email).first()
     if not user:
+        is_first_user = User.query.count() == 0
         user = User(email=email, referral_code=generate_referral_code())
         user.set_password(os.urandom(16).hex())
+        if is_first_user:
+            user.is_admin = True
         db.session.add(user)
         db.session.commit()
+        if is_first_user:
+            flash('Congratulations! You are the first user and have been granted admin privileges.', 'success')
         
     login_user(user)
     

@@ -1,15 +1,11 @@
-# Filepath: tubealgo/routes/analysis_routes.py
-
 from flask import render_template, request, redirect, url_for, flash, Blueprint, Response
-from flask_login import login_required
+from flask_login import login_required, current_user
 from tubealgo.models import Competitor
 from tubealgo.services.youtube_fetcher import (
     analyze_channel, get_full_video_details, get_all_channel_videos,
-    # --- FIX: Missing functions were added here ---
     get_most_used_tags, get_most_viewed_videos, get_latest_videos
 )
 from tubealgo.routes.api_routes import get_full_competitor_package
-# --- FIX: Helper functions are now imported from the new utils.py file ---
 from tubealgo.routes.utils import get_video_info_dict, sanitize_filename
 from datetime import datetime, timezone
 import json
@@ -27,7 +23,6 @@ def deep_analysis(channel_id):
         flash("Competitor not found in your list.", "error")
         return redirect(url_for('competitor.competitors'))
     
-    # This single function call gets all necessary data from the cache (or fetches it)
     data_package = get_full_competitor_package(competitor.id)
 
     if 'error' in data_package:
@@ -35,13 +30,15 @@ def deep_analysis(channel_id):
         return redirect(url_for('competitor.competitors'))
 
     channel_data = data_package.get('details', {})
-    # Note: recent_videos_data and most_viewed_videos_data now contain ALL videos, just sorted differently
+    
+    # recent_videos_data और most_viewed_videos_data दोनों को निकालें
     recent_videos_data = data_package.get('recent_videos_data', {}) or {}
-    most_viewed_videos_data = data_package.get('most_viewed_videos_data', {}) or {}
+    most_viewed_data = data_package.get('most_viewed_videos_data', {}) or {}
     
-    # We only need one list of all videos for the template's logic
-    all_videos_full = recent_videos_data.get('videos', [])
-    
+    # दोनों सूचियों से वीडियो प्राप्त करें
+    recent_videos_list = recent_videos_data.get('videos', [])
+    most_viewed_videos_list = most_viewed_data.get('videos', [])
+
     top_tags = data_package.get('top_tags', [])
     playlists = data_package.get('playlists', [])
     
@@ -53,8 +50,10 @@ def deep_analysis(channel_id):
             avg_daily_views = channel_data.get('Total Views', 0) / days_since_creation
 
     upload_counts = {}
-    if all_videos_full:
-        for video in all_videos_full:
+    
+    # हाल के वीडियो का उपयोग करें
+    if recent_videos_list:
+        for video in recent_videos_list:
             if video.get('upload_date'):
                 upload_month = datetime.fromisoformat(video['upload_date'].replace('Z', '+00:00')).strftime('%Y-%m')
                 upload_counts[upload_month] = upload_counts.get(upload_month, 0) + 1
@@ -66,7 +65,7 @@ def deep_analysis(channel_id):
 
     all_comments = []
     avg_stats = {'views': 0, 'likes': 0, 'comments': 0}
-    videos_for_stats = all_videos_full[:10] # Stats are based on the 10 most recent videos
+    videos_for_stats = recent_videos_list[:10]
 
     if videos_for_stats:
         video_ids_for_comments = [v['id'] for v in videos_for_stats if v and 'id' in v]
@@ -86,13 +85,14 @@ def deep_analysis(channel_id):
                 'comments': total_comments_count / video_count
             }
 
-    from .utils import analyze_comment_sentiment # Local import to avoid circular dependency
+    from .utils import analyze_comment_sentiment
     overall_sentiment = analyze_comment_sentiment(all_comments)
 
-    channel_total_views = channel_data.get('Total Views', 0)
-    channel_video_count = channel_data.get('Video Count', 0)
-    channel_avg_views = channel_total_views / channel_video_count if channel_video_count > 0 else 0
-
+    # दोनों JSON को सही ढंग से पास करें
+    # डुप्लीकेट हटाने के लिए एक सेट बनाएं
+    all_videos_dict = {v['id']: v for v in (recent_videos_list + most_viewed_videos_list) if v and 'id' in v}
+    all_videos_unique = list(all_videos_dict.values())
+    
     return render_template('deep_analysis.html', 
                            channel_data=channel_data,
                            avg_daily_views=avg_daily_views,
@@ -102,11 +102,8 @@ def deep_analysis(channel_id):
                            playlists=playlists,
                            upload_labels=json.dumps(upload_labels),
                            upload_data=json.dumps(upload_data),
-                           recent_videos_json=json.dumps(all_videos_full),
-                           most_viewed_videos_json=json.dumps([]), # No longer needed, all videos are in recent_videos_json
-                           recent_videos_next_page_token=json.dumps(None), # No more pagination
-                           most_viewed_videos_next_page_token=json.dumps(None), # No more pagination
-                           channel_avg_views=channel_avg_views,
+                           recent_videos_json=json.dumps(all_videos_unique), # टेम्पलेट को एक ही लिस्ट भेजें
+                           most_viewed_videos_json=json.dumps([]), # अब इसकी आवश्यकता नहीं है, लेकिन इसे रखना सुरक्षित है
                            active_page='competitors')
 
 
@@ -155,7 +152,6 @@ def export_channel_videos_to_excel(channel_id):
     buffer.seek(0)
     
     channel_info = analyze_channel(channel_id)
-    # --- FIX: Sanitize filename to prevent UnicodeEncodeError ---
     filename = f"{sanitize_filename(channel_info.get('Title', 'channel'))}_videos_export.xlsx"
     
     return Response(
@@ -184,13 +180,12 @@ def export_single_video_to_excel(video_id):
             ws.append(['Positive Sentiment (%)', value.get('positive', 0)])
             ws.append(['Negative Sentiment (%)', value.get('negative', 0)])
         elif not isinstance(value, dict):
-             ws.append([key.replace('_', ' ').title(), value])
+            ws.append([key.replace('_', ' ').title(), value])
 
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
     
-    # --- FIX: Sanitize filename to prevent UnicodeEncodeError ---
     filename = f"{sanitize_filename(video_info.get('title', 'video'))}_analysis.xlsx"
     
     return Response(
@@ -224,7 +219,6 @@ def export_single_video_to_word(video_id):
     document.save(buffer)
     buffer.seek(0)
     
-    # --- FIX: Sanitize filename to prevent UnicodeEncodeError ---
     filename = f"{sanitize_filename(video_info.get('title', 'video'))}_analysis.docx"
     return Response(
         buffer,
@@ -255,7 +249,6 @@ def export_single_video_to_txt(video_id):
     buffer = BytesIO(text_content.encode('utf-8'))
     buffer.seek(0)
     
-    # --- FIX: Sanitize filename to prevent UnicodeEncodeError ---
     filename = f"{sanitize_filename(video_info.get('title', 'video'))}_analysis.txt"
     return Response(
         buffer,
@@ -313,7 +306,7 @@ def export_analysis_to_word(channel_id):
 
     document.add_heading('Top 5 Recent Videos', level=2)
     if recent_videos:
-         for video in recent_videos:
+        for video in recent_videos:
             p = document.add_paragraph()
             p.add_run(f"{video.get('title', 'N/A')}").bold = True
             if video.get('upload_date'):
@@ -326,7 +319,6 @@ def export_analysis_to_word(channel_id):
     document.save(buffer)
     buffer.seek(0)
 
-    # --- FIX: Sanitize filename to prevent UnicodeEncodeError ---
     filename = f"{sanitize_filename(channel_data.get('Title', 'channel'))}_report.docx"
     
     return Response(

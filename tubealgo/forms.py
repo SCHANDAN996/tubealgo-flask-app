@@ -17,7 +17,6 @@ class LoginForm(FlaskForm):
     remember_me = BooleanField('Remember Me')
     submit = SubmitField('Login')
 
-# --- यह नया फॉर्म जोड़ें ---
 class PlaylistForm(FlaskForm):
     title = StringField('Title', validators=[DataRequired(), Length(max=150)])
     description = TextAreaField('Description', validators=[Optional(), Length(max=5000)])
@@ -27,7 +26,6 @@ class PlaylistForm(FlaskForm):
         validators=[DataRequired()]
     )
     submit = SubmitField('Save Playlist')
-# --- यहाँ तक ---
 
 class VideoForm(FlaskForm):
     title = StringField('Title', validators=[DataRequired(), Length(max=100)])
@@ -71,6 +69,8 @@ class PlanForm(FlaskForm):
     competitors_limit = IntegerField('Competitors Limit (-1 for unlimited)', validators=[DataRequired()])
     keyword_searches_limit = IntegerField('Daily Keyword Searches (-1 for unlimited)', validators=[DataRequired()])
     ai_generations_limit = IntegerField('Daily AI Generations (-1 for unlimited)', validators=[DataRequired()])
+    playlist_suggestions_limit = IntegerField('AI Playlist Ideas Limit (-1 for unlimited)', validators=[DataRequired()])
     has_discover_tools = BooleanField('Discover Tools Access')
     has_ai_suggestions = BooleanField('AI Video Suggestions Access')
+    is_popular = BooleanField('Mark as Most Popular')
     submit = SubmitField('Update Plan')

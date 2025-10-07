@@ -1,3 +1,5 @@
+{# tubealgo/templates/admin/edit_plan.html #}
+
 {% extends "admin/admin_layout.html" %}
 {% block title %}Edit Plan{% endblock %}
 {% block header_title %}Edit Plan: {{ plan.name }}{% endblock %}
@@ -25,6 +27,11 @@
         <div>
             <label class="font-medium text-sm">{{ form.ai_generations_limit.label }}</label>
             {{ form.ai_generations_limit(class="mt-1 block w-full border border-input rounded-md p-2") }}
+        </div>
+        {# --- यह नया फील्ड यहाँ जोड़ा गया है --- #}
+        <div>
+            <label class="font-medium text-sm">{{ form.playlist_suggestions_limit.label }}</label>
+            {{ form.playlist_suggestions_limit(class="mt-1 block w-full border border-input rounded-md p-2") }}
         </div>
     </div>
     <div class="space-y-2 pt-4">
