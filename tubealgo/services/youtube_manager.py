@@ -1,7 +1,6 @@
 import os
 import logging
 import re
-import json
 from datetime import timedelta, datetime
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -194,7 +193,9 @@ def update_video_details(credentials, video_id, title, description, tags, privac
         logging.error(f"Could not update video {video_id}: {e}")
         return {'error': str(e)}
 
-def upload_video(credentials, video_filepath, metadata):
+def upload_video(credentials, video_file, metadata):
+    media_body = None
+    temp_filepath = None
     try:
         youtube = build('youtube', 'v3', credentials=credentials)
         body = {
@@ -209,7 +210,12 @@ def upload_video(credentials, video_filepath, metadata):
         if metadata.get('publish_at'):
             body['status']['publishAt'] = metadata['publish_at'].isoformat(timespec='seconds') + "Z"
         
-        media_body = MediaFileUpload(video_filepath, chunksize=-1, resumable=True)
+        temp_dir = "/tmp" if os.path.exists("/tmp") else "tmp"
+        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
+        temp_filepath = os.path.join(temp_dir, video_file.filename)
+        video_file.save(temp_filepath)
+
+        media_body = MediaFileUpload(temp_filepath, chunksize=-1, resumable=True)
         
         request = youtube.videos().insert(
             part="snippet,status",
@@ -226,12 +232,28 @@ def upload_video(credentials, video_filepath, metadata):
     except Exception as e:
         logging.error(f"Could not upload video: {e}")
         return {'error': str(e)}
+    finally:
+        if media_body and hasattr(media_body, '_stream') and not media_body._stream.closed:
+            media_body._stream.close()
+            logging.info("Media stream for video upload closed.")
+        if temp_filepath and os.path.exists(temp_filepath):
+            try:
+                os.remove(temp_filepath)
+                logging.info(f"Temporary video file {temp_filepath} removed.")
+            except Exception as e:
+                logging.error(f"Error removing temporary video file {temp_filepath}: {e}")
 
-def set_video_thumbnail(credentials, video_id, image_filepath):
+def set_video_thumbnail(credentials, video_id, image_file):
+    media_body = None
+    temp_filepath = None
     try:
         youtube = build('youtube', 'v3', credentials=credentials)
+        temp_dir = "/tmp" if os.path.exists("/tmp") else "tmp"
+        if not os.path.exists(temp_dir): os.makedirs(temp_dir)
+        temp_filepath = os.path.join(temp_dir, image_file.filename)
+        image_file.save(temp_filepath)
         
-        media_body = MediaFileUpload(image_filepath)
+        media_body = MediaFileUpload(temp_filepath)
         
         request = youtube.thumbnails().set(
             videoId=video_id,
@@ -242,3 +264,13 @@ def set_video_thumbnail(credentials, video_id, image_filepath):
     except Exception as e:
         logging.error(f"Could not set thumbnail for video {video_id}: {e}")
         return {'error': str(e)}
+    finally:
+        if media_body and hasattr(media_body, '_stream') and not media_body._stream.closed:
+            media_body._stream.close()
+            logging.info("Media stream for thumbnail closed.")
+        if temp_filepath and os.path.exists(temp_filepath):
+            try:
+                os.remove(temp_filepath)
+                logging.info(f"Temporary thumbnail file {temp_filepath} removed.")
+            except Exception as e:
+                logging.error(f"Error removing temporary thumbnail file {temp_filepath}: {e}")
