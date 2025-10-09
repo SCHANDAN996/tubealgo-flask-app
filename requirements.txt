@@ -28,3 +28,4 @@ SQLAlchemy
 pytz
 cashfree-pg
 google-generativeai  
+Flask-Migrate
