@@ -10,14 +10,14 @@ from flask_limiter.util import get_remote_address
 from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
-import config  # नई कॉन्फ़िग फाइल को इम्पोर्ट करें
+import config
+from flask_migrate import Migrate
 
 load_dotenv()
 
-# os.environ['OAUTHLIB_INSECURE_TRANSPORT'] को config.py में मूव कर दिया गया है
-
 db = SQLAlchemy()
 login_manager = LoginManager()
+migrate = Migrate()
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -83,20 +83,18 @@ def create_app():
         template_folder=template_folder_path
     )
 
-    # --- यहाँ बदलाव किया गया है ---
-    # सारी कॉन्फ़िगरेशन अब एक लाइन से लोड होगी
     app.config.from_object(config.Config)
-    # --- बदलाव खत्म ---
-
+    
     db.init_app(app)
     login_manager.init_app(app)
     limiter.init_app(app)
+    migrate.init_app(app, db)
 
     app.jinja_env.filters['relative_time'] = format_relative_time
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = "error"
 
-    # Blueprints को रजिस्टर करना (इसमें कोई बदलाव नहीं)
+    # Blueprints
     from .auth import auth as auth_blueprint
     app.register_blueprint(auth_blueprint, url_prefix='/')
     from .routes.core_routes import core_bp
@@ -128,50 +126,26 @@ def create_app():
     from .jobs import check_for_new_videos, take_daily_snapshots, update_all_dashboards
     from .telegram_bot_handler import process_updates
     from .services.ai_service import initialize_ai_clients
-
+    
     @app.context_processor
     def inject_now_and_settings():
         from .models import get_setting
         return {'now': datetime.utcnow, 'get_setting': get_setting}
 
     with app.app_context():
-        # Step 1: Create all tables first.
-        db.create_all()
+        # db.create_all() is no longer needed here as Flask-Migrate handles it.
         
-        # Step 2: Seed initial data like plans.
         seed_plans()
-
-        # Step 3: Now that tables exist, initialize AI clients which might read from them.
         print("Initializing AI clients within app context...")
         initialize_ai_clients()
 
     scheduler = BackgroundScheduler(daemon=True)
     if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         
-        scheduler.add_job(
-            func=lambda: take_daily_snapshots(app),
-            trigger='interval',
-            hours=24
-        )
-
-        scheduler.add_job(
-            func=lambda: check_for_new_videos(app),
-            trigger='interval',
-            hours=1
-        )
-        
-        scheduler.add_job(
-            func=lambda: update_all_dashboards(app),
-            trigger='interval',
-            hours=4,
-            id='update_all_dashboards_job'
-        )
-
-        scheduler.add_job(
-            func=lambda: process_updates(app),
-            trigger='interval',
-            seconds=10
-        )
+        scheduler.add_job(func=lambda: take_daily_snapshots(app), trigger='interval', hours=24)
+        scheduler.add_job(func=lambda: check_for_new_videos(app), trigger='interval', hours=1)
+        scheduler.add_job(func=lambda: update_all_dashboards(app), trigger='interval', hours=4, id='update_all_dashboards_job')
+        scheduler.add_job(func=lambda: process_updates(app), trigger='interval', seconds=10)
         scheduler.start()
         atexit.register(lambda: scheduler.shutdown())
 

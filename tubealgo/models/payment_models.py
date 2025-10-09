@@ -16,15 +16,16 @@ class Coupon(db.Model):
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    razorpay_payment_id = db.Column(db.String(100), unique=True, nullable=False)
+    razorpay_payment_id = db.Column(db.String(100), nullable=True) # Can be null for other gateways
     razorpay_order_id = db.Column(db.String(100), unique=True, nullable=False)
-    amount = db.Column(db.Integer, nullable=False) # Stored in paise
+    amount = db.Column(db.Integer, nullable=False)
     currency = db.Column(db.String(10), nullable=False, default='INR')
     plan_id = db.Column(db.String(50), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='captured')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
-    user = db.relationship('User', backref='payments')
+    # --- backref यहाँ से हटा दिया गया है ---
+    # user = db.relationship('User', backref='payments') # This line caused the error
 
 class SubscriptionPlan(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -1,9 +1,9 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8 sm:py-12">
+{# --- FIXED: Increased top padding to push content below the sticky header --- #}
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12">
     <main>
-        {# --- यह नया सेक्शन जोड़ें --- #}
         {% set announcement = get_setting('site_announcement') %}
         {% if announcement %}
         <div class="mb-6 p-4 text-sm rounded-lg bg-blue-500/10 text-blue-700 border border-blue-500/20 flex items-start gap-3">
@@ -11,7 +11,6 @@
             <div>{{ announcement }}</div>
         </div>
         {% endif %}
-        {# --- यहाँ तक --- #}
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}

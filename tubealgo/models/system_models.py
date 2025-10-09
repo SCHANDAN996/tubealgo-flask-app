@@ -17,7 +17,6 @@ def log_system_event(message, log_type='INFO', details=None):
     try:
         from ..services.notification_service import send_telegram_message # Local import
         
-        # विवरण को स्ट्रिंग में बदलें, चाहे वह कुछ भी हो
         details_str = ""
         if details:
             if isinstance(details, dict):
@@ -99,4 +98,4 @@ class DashboardCache(db.Model):
     data = db.Column(db.JSON, nullable=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
-    user = db.relationship('User', backref=db.backref('dashboard_cache', uselist=False))
+    user = db.relationship('User', backref=db.backref('dashboard_cache', uselist=False, cascade="all, delete-orphan"))
