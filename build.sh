@@ -18,6 +18,9 @@ pip install -r requirements.txt
 
 # Step 4: Run database migrations
 echo "🔄 Running database migrations..."
+# --- THIS IS THE FIX ---
+# Set the FLASK_APP environment variable before running the flask command
+export FLASK_APP=run.py
 flask db upgrade
 
 echo "🎉 Build process completed successfully!"
