@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% block title %}Terms of Service - TubeAlgo{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-16">
+    <div class="max-w-4xl mx-auto bg-card p-8 md:p-12 rounded-xl border shadow-sm">
+        <article class="prose">
+            <h1>Terms of Service</h1>
+            <p><strong>Last updated:</strong> {{ now().strftime('%B %d, %Y') }}</p>
+            <p>Welcome to TubeAlgo. By accessing or using our service, you agree to be bound by these terms. If you disagree with any part of the terms, then you may not access the service.</p>
+
+            <h2>1. Description of Service</h2>
+            <p>TubeAlgo is a 'Software as a Service' (SaaS) platform that provides YouTube channel analytics, competitor analysis, and AI-powered content strategy suggestions. Our service is intended to be used as a tool for data analysis and to help creators make informed decisions about their content. We are an analytics platform and operate in full compliance with YouTube's Terms of Service.</p>
+
+            <h2>2. User Accounts</h2>
+            <p>When you create an account with us, you must provide information that is accurate and complete. You are responsible for safeguarding the password that you use to access the service and for any activities or actions under your password.</p>
+            
+            <h2>3. Prohibited Activities</h2>
+            <p>You agree not to use the Service for any of the following prohibited activities:</p>
+            <ul>
+                <li>Attempting to artificially inflate engagement metrics (views, likes, subscribers) for any YouTube channel.</li>
+                <li>Engaging in any activity that violates YouTube's Terms of Service or Community Guidelines.</li>
+                <li>Using the service for any illegal or unauthorized purpose.</li>
+            </ul>
+            <p><strong>We do not sell or endorse the sale of subscribers, views, likes, or any form of artificial engagement. Violation of these terms will result in immediate account termination.</strong></p>
+
+            <h2>4. Subscriptions & Cancellations</h2>
+            <p>Some parts of the service are billed on a subscription basis. You will be billed in advance on a recurring basis. You may cancel your subscription at any time, and the cancellation will be effective at the end of your current billing period.</p>
+
+            <h2>5. Termination</h2>
+            <p>We may terminate or suspend your account immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.</p>
+
+            <h2>6. Changes to Terms</h2>
+            <p>We reserve the right, at our sole discretion, to modify or replace these Terms at any time. We will try to provide at least 30 days' notice prior to any new terms taking effect.</p>
+            
+            <h2>7. Contact Us</h2>
+            <p>If you have any questions about these Terms, please contact us at <a href="mailto:tubealgoofficial@gmail.com">tubealgoofficial@gmail.com</a>.</p>
+        </article>
+    </div>
+</div>
+{% endblock %}

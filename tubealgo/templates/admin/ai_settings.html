@@ -1,0 +1,148 @@
+{% extends "admin/admin_layout.html" %}
+{% block title %}AI Settings{% endblock %}
+{% block header_title %}AI Model & API Key Management{% endblock %}
+
+{% block content %}
+<div>
+    <form method="POST" action="{{ url_for('admin.ai_settings') }}" class="space-y-6">
+        <div class="bg-card p-6 rounded-lg border">
+            <h3 class="text-lg font-semibold border-b pb-2 mb-4">Select AI Model</h3>
+            <div class="max-w-xl">
+                <label for="selected_model" class="font-medium text-foreground">Active Gemini Model</label>
+                <p class="text-sm text-muted-foreground mb-2">पूरा एप्लिकेशन AI जेनरेशन के लिए इसी मॉडल का उपयोग करेगा।</p>
+                <select name="selected_model" id="selected_model" class="mt-1 block w-full bg-background border border-input rounded-md p-3 text-sm">
+                    {% for model_info in available_models_info %}
+                        <option value="{{ model_info.name }}" {% if model_info.name == selected_model %}selected{% endif %}>
+                            {{ model_info.name }} - ({{ model_info.display }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="bg-card p-6 rounded-lg border">
+            <h3 class="text-lg font-semibold border-b pb-2 mb-4">Manage Gemini API Keys</h3>
+            <p class="text-sm text-muted-foreground mb-4">एक-एक करके अपनी सभी Gemini API Keys जोड़ें। सिस्टम अपने आप रोटेट करेगा और फेल होने पर अगली Key का उपयोग करेगा।</p>
+            
+            <div id="api-key-list" class="space-y-3">
+                {% for key in current_keys %}
+                <div class="flex items-center gap-2 api-key-row">
+                    <input type="text" name="gemini_keys" value="{{ key }}" class="flex-grow bg-background border border-input rounded-md p-2 font-mono" placeholder="Enter Gemini API Key">
+                    <button type="button" onclick="removeKey(this)" class="bg-destructive/10 text-destructive px-3 py-2 rounded-md hover:bg-destructive/20" title="Remove Key">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <button type="button" id="add-key-btn" class="mt-4 bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-semibold text-sm hover:bg-border">
+                <i class="fa-solid fa-plus mr-2"></i>Add Another Key
+            </button>
+        </div>
+
+        <div class="bg-card p-6 rounded-lg border">
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold">Test & Save</h3>
+                    <p class="text-sm text-muted-foreground">सेव करने से पहले अपनी सेटिंग्स का परीक्षण करें।</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button type="button" id="test-config-btn" class="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-blue-700">
+                        <i class="fa-solid fa-vial-circle-check mr-2"></i>Test Configuration
+                    </button>
+                    <button type="submit" class="bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-semibold">Save All Settings</button>
+                </div>
+            </div>
+
+            <div id="test-results-container" class="mt-4 border-t pt-4" style="display: none;">
+                <h4 class="font-semibold mb-2">Test Results:</h4>
+                <div id="test-results-loader" class="text-center py-4" style="display: none;">
+                    <i class="fa-solid fa-spinner animate-spin text-2xl text-primary"></i>
+                    <p class="text-sm text-muted-foreground mt-2">Testing...</p>
+                </div>
+                <div id="test-results-list" class="space-y-2"></div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    // API Key जोड़ने/हटाने के लिए जावास्क्रिप्ट
+    document.getElementById('add-key-btn').addEventListener('click', function() {
+        const list = document.getElementById('api-key-list');
+        const newRow = document.createElement('div');
+        newRow.className = 'flex items-center gap-2 api-key-row';
+        newRow.innerHTML = `
+            <input type="text" name="gemini_keys" value="" class="flex-grow bg-background border border-input rounded-md p-2 font-mono" placeholder="Enter Gemini API Key">
+            <button type="button" onclick="removeKey(this)" class="bg-destructive/10 text-destructive px-3 py-2 rounded-md hover:bg-destructive/20" title="Remove Key">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        `;
+        list.appendChild(newRow);
+    });
+
+    function removeKey(button) {
+        const rows = document.querySelectorAll('.api-key-row');
+        if (rows.length > 1) {
+            button.parentElement.remove();
+        } else {
+            button.parentElement.querySelector('input').value = '';
+        }
+    }
+
+    // कॉन्फ़िगरेशन टेस्ट करने के लिए नया जावास्क्रिप्ट
+    document.getElementById('test-config-btn').addEventListener('click', async function() {
+        const container = document.getElementById('test-results-container');
+        const loader = document.getElementById('test-results-loader');
+        const list = document.getElementById('test-results-list');
+        const button = this;
+
+        // UI तैयार करें
+        container.style.display = 'block';
+        loader.style.display = 'block';
+        list.innerHTML = '';
+        button.disabled = true;
+
+        // डेटा इकट्ठा करें
+        const keyInputs = document.querySelectorAll('input[name="gemini_keys"]');
+        const keys = Array.from(keyInputs).map(input => input.value).filter(k => k.trim() !== '');
+        const model = document.getElementById('selected_model').value;
+
+        try {
+            const response = await fetch("{{ url_for('admin.test_ai_config') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keys: keys, model: model })
+            });
+            const data = await response.json();
+
+            if (data.results) {
+                data.results.forEach(result => {
+                    const resultDiv = document.createElement('div');
+                    const isSuccess = result.status === 'Valid';
+                    
+                    resultDiv.className = `flex items-center justify-between text-sm p-3 rounded-lg ${isSuccess ? 'bg-green-500/10 text-green-800' : 'bg-red-500/10 text-red-800'}`;
+                    
+                    let reasonHtml = result.reason ? `<span class="text-xs ml-2">(${result.reason})</span>` : '';
+
+                    resultDiv.innerHTML = `
+                        <span class="font-mono">${result.key_mask}</span>
+                        <div>
+                            <span class="font-bold">${result.status}</span>
+                            ${reasonHtml}
+                        </div>
+                    `;
+                    list.appendChild(resultDiv);
+                });
+            } else {
+                list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">${data.message || 'An unknown error occurred.'}</div>`;
+            }
+        } catch (error) {
+            list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">Failed to run test. Check console for details.</div>`;
+        } finally {
+            loader.style.display = 'none';
+            button.disabled = false;
+        }
+    });
+</script>
+{% endblock %}
