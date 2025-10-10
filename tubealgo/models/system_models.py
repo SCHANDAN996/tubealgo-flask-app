@@ -15,7 +15,8 @@ class SystemLog(db.Model):
 def log_system_event(message, log_type='INFO', details=None):
     """Logs an event to the database and sends a notification for critical errors."""
     try:
-        from ..services.notification_service import send_telegram_message # Local import
+        # === बदलाव यहाँ है: इम्पोर्ट को फंक्शन के अंदर ले जाया गया है ===
+        from ..services.notification_service import send_telegram_message 
         
         details_str = ""
         if details:
