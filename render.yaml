@@ -4,51 +4,52 @@ services:
   - type: web
     name: tubealgo
     env: python
-    plan: free
+    plan: free # यदि आप एक पेड प्लान पर हैं तो इसे बदलें
 
-    # Build command tells Render to execute your script
+    # Build command Render को आपकी स्क्रिप्ट निष्पादित करने के लिए कहता है
     buildCommand: "./build.sh"
 
-    # Start command runs your application with Gunicorn
+    # Start command Gunicorn के साथ आपके एप्लिकेशन को चलाता है
     startCommand: "gunicorn run:app"
 
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: tubealgo-database # Make sure this matches your database name on Render
+          # === महत्वपूर्ण बदलाव यहाँ है ===
+          # 'tubealgo-database' को अपने वास्तविक Render डेटाबेस के नाम से बदलें
+          name: tubealgo-database 
           property: connectionString
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.0 # आप चाहें तो नए संस्करण का उपयोग कर सकते हैं
       - key: NODE_VERSION
         value: 20.10.0
       - key: SECRET_KEY
         generateValue: true
       
+      # --- इन Keys को Render Dashboard में सीधे सेट करें ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: OPENAI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: MEASUREMENT_ID
         sync: false
-
-      # --- REMOVE RAZORPAY KEYS ---
-      # - key: RAZORPAY_KEY_ID
-      #   sync: false
-      # - key: RAZORPAY_KEY_SECRET
-      #   sync: false
-        
-      # +++ ADD CASHFREE KEYS HERE +++
       - key: CASHFREE_APP_ID
         sync: false
       - key: CASHFREE_SECRET_KEY
         sync: false
       - key: CASHFREE_ENV
-        value: "PROD" # या "PROD" जब आप लाइव होंगे
+        value: "PROD"
 
     autoDeploy: true
+
+# Render पर एक PostgreSQL डेटाबेस बनाएं और सुनिश्चित करें कि ऊपर 'name' सही है
+databases:
+  - name: tubealgo-database # सुनिश्चित करें कि यह नाम ऊपर envVars में उपयोग किए गए नाम से मेल खाता है
+    databaseName: tubealgodb # वास्तविक डेटाबेस का नाम
+    user: tubealgouser # वास्तविक उपयोगकर्ता का नाम
