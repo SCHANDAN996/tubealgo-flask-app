@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TubeAlgo Admin - {% block title %}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-secondary">
+    <div class="flex h-screen bg-secondary text-foreground">
+        <div class="w-64 bg-card border-r border-border flex-shrink-0 flex flex-col">
+            <div class="p-4 border-b">
+                <a href="{{ url_for('admin.dashboard') }}" class="flex items-center space-x-2">
+                    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="w-8 h-8">
+                    <span class="text-xl font-bold font-display">TubeAlgo Admin</span>
+                </a>
+            </div>
+            <nav class="p-4 space-y-2 flex-grow">
+                <a href="{{ url_for('admin.dashboard') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.dashboard' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-house fa-fw mr-3"></i> Dashboard
+                </a>
+                <a href="{{ url_for('admin.users') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.users' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-users fa-fw mr-3"></i> Users
+                </a>
+                <a href="{{ url_for('admin.payments') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.payments' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-credit-card fa-fw mr-3"></i> Payments
+                </a>
+                <a href="{{ url_for('admin.plans') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.plans' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-gem fa-fw mr-3"></i> Plans
+                </a>
+                <a href="{{ url_for('admin.coupons') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.coupons' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-ticket fa-fw mr-3"></i> Coupons
+                </a>
+                <a href="{{ url_for('admin.system_logs') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.system_logs' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-triangle-exclamation fa-fw mr-3"></i> System Logs
+                </a>
+                <a href="{{ url_for('admin.cache_management') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.cache_management' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-broom fa-fw mr-3"></i> Cache
+                </a>
+                <a href="{{ url_for('admin.site_settings') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.site_settings' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-cog fa-fw mr-3"></i> Site Settings
+                </a>
+                <a href="{{ url_for('admin.ai_settings') }}" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary {% if request.endpoint == 'admin.ai_settings' %}bg-secondary text-primary{% endif %}">
+                    <i class="fa-solid fa-robot fa-fw mr-3"></i> AI Settings
+                </a>
+            </nav>
+            <div class="p-4 border-t">
+                <a href="{{ url_for('core.home') }}" target="_blank" class="flex items-center px-3 py-2 text-sm font-medium rounded-md hover:bg-secondary">
+                    <i class="fa-solid fa-arrow-right-from-bracket fa-fw mr-3"></i> View Main Site
+                </a>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <header class="bg-card border-b p-4">
+                <h1 class="text-xl font-semibold">{% block header_title %}{% endblock %}</h1>
+            </header>
+            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-secondary p-6">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="mb-4 p-4 text-sm rounded-lg {{ 'bg-destructive/10 text-destructive' if category == 'error' else 'bg-primary/10 text-primary' }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+</body>
+</html>

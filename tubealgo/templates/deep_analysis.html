@@ -1,0 +1,271 @@
+{% extends "app_layout.html" %}
+
+{% block app_content %}
+<div class="max-w-7xl mx-auto space-y-8"
+     x-data="deepAnalysisDashboard()">
+
+    <div class="mb-4">
+        <a href="{{ url_for('competitor.competitors') }}" class="text-sm font-medium text-primary hover:underline">
+            <i class="fa-solid fa-arrow-left mr-2"></i>Back to Competitors
+        </a>
+    </div>
+
+    {% if channel_data and 'error' not in channel_data %}
+        <div class="bg-card p-6 rounded-xl border shadow-sm">
+            <div class="flex flex-col sm:flex-row items-center gap-6">
+                <img src="{{ channel_data['Thumbnail URL'] }}" alt="Channel Thumbnail" class="w-24 h-24 rounded-full border-4 border-secondary">
+                <div class="flex-grow text-center sm:text-left">
+                    <h1 class="text-3xl font-bold text-foreground">{{ channel_data.Title }}</h1>
+                    <div class="flex justify-center sm:justify-start flex-wrap gap-4 sm:gap-6 mt-2 text-muted-foreground">
+                        <span><strong class="text-foreground">{{ "{:,.0f}".format(channel_data.Subscribers) }}</strong> Subs</span>
+                        <span><strong class="text-foreground">{{ "{:,.0f}".format(channel_data['Total Views']) }}</strong> Views</span>
+                        <span><strong class="text-foreground">{{ "{:,.0f}".format(channel_data['Video Count']) }}</strong> Videos</span>
+                        <span><strong class="text-foreground">~{{ "{:,.0f}".format(avg_daily_views) }}</strong> Views/Day</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="border-b border-border">
+            <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                <button @click="activeTab = 'overview'" :class="{'border-primary text-primary': activeTab === 'overview', 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300': activeTab !== 'overview'}" class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium">Overview</button>
+                <button @click="activeTab = 'videos'" :class="{'border-primary text-primary': activeTab === 'videos', 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300': activeTab !== 'videos'}" class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium">Videos</button>
+                <button @click="activeTab = 'playlists'" :class="{'border-primary text-primary': activeTab === 'playlists', 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300': activeTab !== 'playlists'}" class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium">Playlists</button>
+            </nav>
+        </div>
+
+        <div>
+            <div x-show="activeTab === 'overview'" x-transition class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-card p-6 rounded-xl border shadow-sm">
+                        <h2 class="text-xl font-bold text-foreground mb-4 font-display flex items-center"><i class="fa-solid fa-calculator mr-3 text-brand-teal"></i>Average Performance <span class="text-sm font-normal text-muted-foreground ml-2">(Last 10 Videos)</span></h2>
+                        <div class="grid grid-cols-3 gap-4 text-center">
+                            <div class="bg-secondary p-4 rounded-lg"><div class="text-2xl font-bold text-foreground">{{ "{:,.0f}".format(avg_stats.views) }}</div><div class="text-xs text-muted-foreground">Avg. Views</div></div>
+                            <div class="bg-secondary p-4 rounded-lg"><div class="text-2xl font-bold text-foreground">{{ "{:,.0f}".format(avg_stats.likes) }}</div><div class="text-xs text-muted-foreground">Avg. Likes</div></div>
+                            <div class="bg-secondary p-4 rounded-lg"><div class="text-2xl font-bold text-foreground">{{ "{:,.0f}".format(avg_stats.comments) }}</div><div class="text-xs text-muted-foreground">Avg. Comments</div></div>
+                        </div>
+                    </div>
+                    <div class="bg-card p-6 rounded-xl border shadow-sm">
+                        <h2 class="text-xl font-bold text-foreground mb-4 font-display flex items-center"><i class="fa-solid fa-comments mr-3 text-brand-cyan"></i>Overall Channel Sentiment</h2>
+                        <p class="text-xs text-muted-foreground mb-4">Based on comments from recent videos.</p>
+                        <div class="space-y-3">
+                            <div class="space-y-1"><p class="text-xs font-semibold text-green-600 flex justify-between"><span>Positive</span><span>{{ overall_sentiment.positive }}%</span></p><div class="w-full bg-secondary rounded-full h-2.5"><div class="bg-green-500 h-2.5 rounded-full" style="width: {{ overall_sentiment.positive }}%"></div></div></div>
+                            <div class="space-y-1"><p class="text-xs font-semibold text-red-600 flex justify-between"><span>Negative</span><span>{{ overall_sentiment.negative }}%</span></p><div class="w-full bg-secondary rounded-full h-2.5"><div class="bg-red-500 h-2.5 rounded-full" style="width: {{ overall_sentiment.negative }}%"></div></div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-card p-6 rounded-xl border shadow-sm">
+                    <h2 class="text-xl font-bold text-foreground mb-4 font-display">Upload Consistency (Recent Months)</h2>
+                    <div class="h-64"><canvas id="uploadChart"></canvas></div>
+                </div>
+                <div class="bg-card p-6 rounded-xl border shadow-sm">
+                    <h2 class="text-xl font-bold text-foreground mb-4 font-display">Top Used Tags</h2>
+                    <div class="flex flex-wrap gap-2">
+                        {% for tag, count in top_tags %}<span class="bg-secondary text-secondary-foreground text-sm font-medium px-3 py-1 rounded-full">{{ tag }} ({{count}})</span>{% else %}<p class="text-muted-foreground">No significant tags found.</p>{% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'videos'" x-transition class="space-y-6">
+                <div class="bg-card p-4 rounded-xl border shadow-sm space-y-4">
+                    <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div class="flex items-center gap-2 flex-wrap">
+                           <span class="text-sm font-semibold text-muted-foreground mr-2">Sort by:</span>
+                           <button @click="activeVideoSort = 'recent'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeVideoSort === 'recent', 'bg-secondary hover:bg-border': activeVideoSort !== 'recent' }">Most Recent</button>
+                           <button @click="activeVideoSort = 'views'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeVideoSort === 'views', 'bg-secondary hover:bg-border': activeVideoSort !== 'views' }">Most Viewed</button>
+                           <button @click="activeVideoSort = 'engagement'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeVideoSort === 'engagement', 'bg-secondary hover:bg-border': activeVideoSort !== 'engagement' }">Top Engagement</button>
+                        </div>
+                        <div class="flex gap-2 w-full sm:w-auto">
+                            <button @click="showExportModal = true" class="flex-1 sm:flex-initial bg-brand-green text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-brand-green/90">
+                               <i class="fa-solid fa-file-excel mr-2"></i>Export Excel
+                            </button>
+                            <a href="{{ url_for('analysis.export_analysis_to_word', channel_id=channel_data.id) }}" class="flex-1 sm:flex-initial text-center bg-brand-blue text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-brand-blue/90">
+                               <i class="fa-solid fa-file-word mr-2"></i>Export Word
+                            </a>
+                        </div>
+                    </div>
+                     <div class="flex items-center gap-2 flex-wrap border-t border-border pt-4">
+                        <span class="text-sm font-semibold text-muted-foreground mr-2">Filter by:</span>
+                        <button @click="activeVideoType = 'all'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeVideoType === 'all', 'bg-secondary hover:bg-border': activeVideoType !== 'all' }">All Videos</button>
+                        <button @click="activeVideoType = 'long'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeVideoType === 'long', 'bg-secondary hover:bg-border': activeVideoType !== 'long' }">Long Videos</button>
+                        <button @click="activeVideoType = 'shorts'" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': activeVideoType === 'shorts', 'bg-secondary hover:bg-border': activeVideoType !== 'shorts' }">Shorts</button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <template x-for="video in displayedVideos" :key="video.id">
+                        <a :href="'{{ url_for('analysis.video_analysis', video_id='') }}' + video.id" class="group block bg-card p-3 rounded-xl border shadow-sm hover:border-primary transition-all">
+                            <div class="relative">
+                                <img :src="video.thumbnail" :alt="video.title" class="rounded-lg mb-2 w-full aspect-video object-cover">
+                                <span x-show="video.is_short" class="absolute top-2 right-2 bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-bolt"></i> Short</span>
+                            </div>
+                            <h4 class="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary" x-text="video.title"></h4>
+                            <div class="text-xs text-muted-foreground mt-2 space-y-1">
+                                <div class="flex justify-between"><span><i class="fa-solid fa-eye fa-fw mr-1"></i> <span x-text="Number(video.view_count).toLocaleString()"></span></span> <span x-text="new Date(video.upload_date).toLocaleDateString()"></span></div>
+                                <div class="flex justify-between font-semibold"><span><i class="fa-solid fa-heart fa-fw mr-1 text-red-500"></i> <span x-text="Number(video.like_count).toLocaleString()"></span></span> <span><i class="fa-solid fa-comments fa-fw mr-1 text-sky-500"></i> <span x-text="Number(video.comment_count).toLocaleString()"></span></span> <span><i class="fa-solid fa-fire fa-fw mr-1 text-orange-500"></i> <span x-text="video.engagement_rate + '%'"></span></span></div>
+                            </div>
+                        </a>
+                    </template>
+                </div>
+                <div class="text-center">
+                    <button x-show="showLoadMoreButton()" @click="loadMoreVideos()" class="bg-primary text-primary-foreground px-6 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
+                        Load More Videos
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'playlists'" x-transition class="space-y-6">
+                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    {% for playlist in playlists %}
+                        <a href="https://www.youtube.com/playlist?list={{ playlist.id }}" target="_blank" class="group block bg-card p-4 rounded-xl border shadow-sm hover:border-primary transition-all">
+                            <div class="relative">
+                                <img src="{{ playlist.thumbnail or 'https://via.placeholder.com/1280x720/E8E8E8/999999?text=No+Thumbnail' }}" alt="{{ playlist.title }}" class="rounded-lg mb-3 w-full aspect-video object-cover">
+                                <div class="absolute bottom-2 right-2 bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-md backdrop-blur-sm"><i class="fa-solid fa-list-ol mr-1.5"></i> {{ playlist.video_count }} Videos</div>
+                            </div>
+                            <h4 class="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary">{{ playlist.title }}</h4>
+                        </a>
+                    {% else %}
+                        <p class="text-muted-foreground col-span-full text-center py-8">No public playlists found for this channel.</p>
+                    {% endfor %}
+                 </div>
+            </div>
+        </div>
+
+        <div x-show="showExportModal" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" @keydown.escape.window="showExportModal = false" x-cloak>
+            <div @click.away="showExportModal = false" class="bg-card rounded-xl shadow-xl w-full max-w-md mx-4">
+                <div class="p-5 border-b border-border flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-foreground">Select Columns to Export</h3>
+                    <button @click="showExportModal = false" class="text-muted-foreground hover:text-foreground">&times;</button>
+                </div>
+                <div class="p-6 max-h-80 overflow-y-auto">
+                    <div class="grid grid-cols-2 gap-4">
+                        <template x-for="option in exportOptions" :key="option.key">
+                            <label class="flex items-center space-x-3 bg-secondary p-3 rounded-lg">
+                                <input type="checkbox" x-model="option.selected" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary">
+                                <span class="text-sm font-medium text-foreground" x-text="option.label"></span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+                <div class="px-6 py-4 bg-secondary/50 rounded-b-xl flex justify-end gap-3">
+                    <button type="button" @click="showExportModal = false" class="px-5 py-2 rounded-lg text-sm font-semibold bg-secondary text-secondary-foreground hover:bg-border">Cancel</button>
+                    <a :href="generateExportUrl()" @click="if (generateExportUrl() === 'javascript:void(0)') { alert('Please select at least one column.'); return; } showExportModal = false"
+                       class="px-5 py-2 rounded-lg text-sm font-semibold bg-brand-green text-white hover:bg-brand-green/90">
+                       <i class="fa-solid fa-download mr-2"></i>Download Excel
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    {% else %}
+        <div class="text-center py-20"><i class="fa-solid fa-circle-exclamation text-4xl text-destructive"></i><p class="mt-4 text-muted-foreground">Could not load channel analysis. The API quota might be exceeded.</p></div>
+    {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('deepAnalysisDashboard', () => ({
+        activeTab: 'overview',
+        activeVideoSort: 'recent',
+        activeVideoType: 'all',
+        
+        // --- CHANGE #1: Combine all videos into a single master list ---
+        allVideos: [], 
+        videosToShow: 20, // Number of videos to show initially
+
+        showExportModal: false,
+        exportOptions: [
+            { key: 'title', label: 'Video Title', selected: true },
+            { key: 'video_url', label: 'Video URL', selected: true },
+            { key: 'upload_date', label: 'Upload Date', selected: true },
+            { key: 'view_count', label: 'Views', selected: true },
+            { key: 'like_count', label: 'Likes', selected: false },
+            { key: 'comment_count', label: 'Comments', selected: false },
+            { key: 'engagement_rate', label: 'Engagement Rate (%)', selected: false },
+            { key: 'duration_seconds', label: 'Duration (Seconds)', selected: false },
+        ],
+
+        init() {
+            // --- CHANGE #1 (continued): Populate the master list on initialization ---
+            const recentVideos = {{ recent_videos_json | safe }};
+            const mostViewedVideos = {{ most_viewed_videos_json | safe }};
+            const allVids = [...recentVideos, ...mostViewedVideos];
+            const uniqueVidsMap = new Map(allVids.map(v => [v.id, v]));
+            this.allVideos = Array.from(uniqueVidsMap.values());
+
+            this.$watch('activeTab', (value) => {
+                if(value === 'overview') { this.$nextTick(() => this.initUploadChart()); }
+            });
+            this.initUploadChart();
+        },
+
+        // --- CHANGE #3: This computed property now sorts and filters the local master list ---
+        get sortedAndFilteredVideos() {
+            let sourceList = [...this.allVideos];
+
+            // Apply Sort
+            if (this.activeVideoSort === 'recent') {
+                sourceList.sort((a, b) => new Date(b.upload_date) - new Date(a.upload_date));
+            } else if (this.activeVideoSort === 'views') {
+                sourceList.sort((a, b) => b.view_count - a.view_count);
+            } else if (this.activeVideoSort === 'engagement') {
+                sourceList.sort((a, b) => b.engagement_rate - a.engagement_rate);
+            }
+
+            // Apply Type Filter
+            if (this.activeVideoType === 'long') {
+                sourceList = sourceList.filter(v => !v.is_short);
+            } else if (this.activeVideoType === 'shorts') {
+                sourceList = sourceList.filter(v => v.is_short);
+            }
+            
+            return sourceList;
+        },
+
+        // --- CHANGE #3 (continued): This now shows a slice of the full filtered list ---
+        get displayedVideos() {
+            return this.sortedAndFilteredVideos.slice(0, this.videosToShow);
+        },
+        
+        // --- CHANGE #2: The "Load More" logic is now local ---
+        showLoadMoreButton() {
+            return this.videosToShow < this.sortedAndFilteredVideos.length;
+        },
+
+        loadMoreVideos() {
+            this.videosToShow += 20; // Simply show more from the existing list
+        },
+
+        generateExportUrl() {
+            const baseUrl = `{{ url_for('analysis.export_channel_videos_to_excel', channel_id=channel_data.id) }}`;
+            const selected = this.exportOptions.filter(opt => opt.selected).map(opt => `columns=${opt.key}`);
+            if (selected.length === 0) {
+                return 'javascript:void(0)';
+            }
+            return `${baseUrl}?${selected.join('&')}`;
+        },
+
+        initUploadChart() {
+            const ctx = document.getElementById('uploadChart');
+            if (!ctx || Chart.getChart(ctx)) return;
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: {{ upload_labels | safe }},
+                    datasets: [{
+                        label: 'Videos Uploaded', data: {{ upload_data | safe }},
+                        backgroundColor: 'rgba(126, 34, 206, 0.5)', borderColor: 'rgba(126, 34, 206, 1)',
+                        borderWidth: 1, borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+    }));
+});
+</script>
+{% endblock %}
