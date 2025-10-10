@@ -4,29 +4,24 @@ services:
   - type: web
     name: tubealgo
     env: python
-    plan: free # यदि आप एक पेड प्लान पर हैं तो इसे बदलें
+    plan: free
 
-    # Build command Render को आपकी स्क्रिप्ट निष्पादित करने के लिए कहता है
     buildCommand: "./build.sh"
-
-    # Start command Gunicorn के साथ आपके एप्लिकेशन को चलाता है
     startCommand: "gunicorn run:app"
 
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          # === महत्वपूर्ण बदलाव यहाँ है ===
-          # 'tubealgo-database' को अपने वास्तविक Render डेटाबेस के नाम से बदलें
-          name: tubealgo-database 
-          property: connectionString
+      # === महत्वपूर्ण बदलाव यहाँ है ===
+      # हमने fromDatabase सेक्शन को हटा दिया है क्योंकि अब हम इसे सीधे डैशबोर्ड से सेट कर रहे हैं।
       - key: PYTHON_VERSION
-        value: 3.11.0 # आप चाहें तो नए संस्करण का उपयोग कर सकते हैं
+        value: 3.11.0
       - key: NODE_VERSION
         value: 20.10.0
       - key: SECRET_KEY
         generateValue: true
       
-      # --- इन Keys को Render Dashboard में सीधे सेट करें ---
+      # ये सभी Keys आपके Render डैशबोर्ड के "Environment" सेक्शन में होनी चाहिए
+      - key: DATABASE_URL
+        sync: false
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -48,8 +43,8 @@ services:
 
     autoDeploy: true
 
-# Render पर एक PostgreSQL डेटाबेस बनाएं और सुनिश्चित करें कि ऊपर 'name' सही है
+# यह सुनिश्चित करने के लिए कि आपका डेटाबेस मौजूद है, इस सेक्शन को YAML में रखें।
 databases:
-  - name: tubealgo-database # सुनिश्चित करें कि यह नाम ऊपर envVars में उपयोग किए गए नाम से मेल खाता है
-    databaseName: tubealgodb # वास्तविक डेटाबेस का नाम
-    user: tubealgouser # वास्तविक उपयोगकर्ता का नाम
+  - name: tubealgo-database # यह नाम आपके डेटाबेस के नाम से मेल खाना चाहिए
+    databaseName: tubealgodb 
+    user: tubealgouser
