@@ -16,11 +16,6 @@ npx tailwindcss -i ./static/css/main.css -o ./static/css/output.css --minify
 echo "🐍 Installing Python dependencies..."
 pip install -r requirements.txt
 
-# Step 4: Run database migrations
-echo "🔄 Running database migrations..."
-# --- THIS IS THE FIX ---
-# Set the FLASK_APP environment variable before running the flask command
-export FLASK_APP=run.py
-flask db upgrade
+# Step 4 (Removed): Database migration is no longer needed here.
 
 echo "🎉 Build process completed successfully!"
