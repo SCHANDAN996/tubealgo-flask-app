@@ -15,7 +15,8 @@ else:
         genai.configure(api_key=GEMINI_API_KEY)
 
         print("आपकी API Key के लिए उपलब्ध मॉडल्स की सूची:")
-        print("AIzaSyAiV_oxj-h1kIoR9Wf8AQ1rF0-X8MgaeOY")
+        
+        # === बदलाव यहाँ है: हार्डकोडेड की प्रिंट को हटा दिया गया है ===
 
         found_model = False
         for m in genai.list_models():
