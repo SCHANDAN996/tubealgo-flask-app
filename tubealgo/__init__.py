@@ -18,8 +18,8 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
 
-# Celery ऑब्जेक्ट को यहाँ बनाया गया है
-celery = Celery(__name__, broker=config.Config.CELERY_BROKER_URL)
+# Celery ऑब्जेक्ट को यहाँ बिना कॉन्फ़िगरेशन के बनाया गया है
+celery = Celery(__name__)
 
 def create_app():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -35,7 +35,7 @@ def create_app():
 
     app.config.from_object(config.Config)
     
-    # Celery कॉन्फ़िगरेशन को अपडेट करें और Beat शेड्यूल सेट करें
+    # Celery कॉन्फ़िगरेशन को यहाँ ऐप कॉन्टेक्स्ट के अंदर अपडेट करें
     celery.conf.update(
         broker_url=app.config["CELERY_BROKER_URL"],
         result_backend=app.config["CELERY_RESULT_BACKEND"]
@@ -111,8 +111,6 @@ def create_app():
         seed_plans()
         print("Initializing AI clients within app context...")
         initialize_ai_clients()
-
-    # APScheduler का कोड यहाँ से हटा दिया गया है
     
     return app
 
