@@ -1,15 +1,15 @@
-# Filepath: tubealgo/routes/settings_routes.py
+# tubealgo/routes/settings_routes.py
 
 from flask import render_template, request, redirect, url_for, flash, Blueprint
 from flask_login import login_required, current_user
 from flask_wtf import FlaskForm
 from tubealgo import db
-from tubealgo.models import User, log_system_event # log_system_event को यहाँ जोड़ें
+from tubealgo.models import User, log_system_event
 from tubealgo.services.notification_service import send_telegram_message
 
 settings_bp = Blueprint('settings', __name__)
 
-@settings_bp.route('/test-telegram', methods=['GET', 'POST'])
+@settings_bp.route('/test-telegram', methods=['POST'])
 @login_required
 def test_telegram():
     """Saves the Chat ID from form (if POST) and then sends a test message."""
@@ -55,11 +55,26 @@ def test_telegram():
 def settings():
     form = FlaskForm()
     if form.validate_on_submit():
-        current_user.default_channel_name = request.form.get('channel_name')
-        current_user.default_social_handles = request.form.get('social_handles')
-        current_user.default_contact_info = request.form.get('contact_info')
-        db.session.commit()
-        flash('Your default information has been saved!', 'success')
+        # Check which button was pressed via its 'name' and 'value' attributes
+        action = request.form.get('action')
+        
+        if action == 'update_phone':
+            phone = request.form.get('phone_number', '').strip()
+            # Basic validation for a 10-digit number
+            if phone.isdigit() and len(phone) >= 10:
+                current_user.phone_number = phone
+                db.session.commit()
+                flash('Your phone number has been updated!', 'success')
+            else:
+                flash('Please enter a valid phone number (at least 10 digits).', 'error')
+        
+        elif action == 'update_defaults':
+            current_user.default_channel_name = request.form.get('channel_name')
+            current_user.default_social_handles = request.form.get('social_handles')
+            current_user.default_contact_info = request.form.get('contact_info')
+            db.session.commit()
+            flash('Your default information has been saved!', 'success')
+        
         return redirect(url_for('settings.settings'))
 
     return render_template('settings.html', form=form, active_page='settings')
@@ -70,7 +85,6 @@ def settings():
 def telegram_settings():
     form = FlaskForm()
     if form.validate_on_submit():
-        # --- LOGIC FOR MANUALLY SETTING CHAT ID ---
         chat_id = request.form.get('telegram_chat_id', '').strip()
         
         if chat_id and chat_id != current_user.telegram_chat_id:
@@ -89,7 +103,6 @@ def telegram_settings():
             current_user.telegram_chat_id = None
             flash('Telegram Chat ID has been removed.', 'success')
 
-        # --- LOGIC FOR SAVING NOTIFICATION PREFERENCES ---
         current_user.telegram_notify_new_video = 'notify_new_video' in request.form
         current_user.telegram_notify_viral_video = 'notify_viral_video' in request.form
         current_user.telegram_notify_milestone = 'notify_milestone' in request.form
@@ -102,16 +115,14 @@ def telegram_settings():
         
     return render_template('telegram_settings.html', form=form, active_page='settings')
 
-# NEW: Route for data deletion request
 @settings_bp.route('/settings/request-deletion', methods=['POST'])
 @login_required
 def request_data_deletion():
-    # एडमिन को सूचित करने के लिए यह लाइन जोड़ें
     log_system_event(
         message=f"Data deletion request received from user: {current_user.email}",
-        log_type='USER_ACTION',  # आप कोई भी टाइप दे सकते हैं
+        log_type='USER_ACTION',
         details={'user_id': current_user.id, 'email': current_user.email}
     )
-
+    
     flash('Your data deletion request has been received. We will process it within 7 business days.', 'success')
     return redirect(url_for('settings.settings'))
