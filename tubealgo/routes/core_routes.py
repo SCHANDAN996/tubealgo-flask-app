@@ -1,6 +1,7 @@
-# Filepath: tubealgo/routes/core_routes.py
+# tubealgo/routes/core_routes.py
 
 from flask import Blueprint, render_template, request, session, flash, redirect, url_for
+from flask_wtf import FlaskForm # <-- यह नई लाइन जोड़ें
 from tubealgo.models import get_setting, SubscriptionPlan
 from tubealgo.services.youtube_fetcher import analyze_channel
 
@@ -21,13 +22,16 @@ def home():
 
 @core_bp.route('/pricing')
 def pricing():
+    # --- यहाँ बदलाव किया गया है ---
+    form = FlaskForm() # एक खाली फॉर्म बनाएं ताकि CSRF टोकन उपलब्ध हो
     plans = SubscriptionPlan.query.filter(SubscriptionPlan.plan_id != 'free').order_by(SubscriptionPlan.price).all()
     
     seo_data = {
         'title': get_setting('seo_pricing_title', 'Pricing & Plans - TubeAlgo'),
         'description': get_setting('seo_pricing_description', "Explore TubeAlgo's affordable pricing plans.")
     }
-    return render_template('pricing.html', plans=plans, **seo_data)
+    # फॉर्म को टेम्पलेट में पास करें
+    return render_template('pricing.html', plans=plans, form=form, **seo_data)
 
 @core_bp.route('/about')
 def about():
@@ -49,11 +53,9 @@ def refund_policy():
 def data_disclaimer():
     return render_template('data_disclaimer.html', title='Data Disclaimer - TubeAlgo')
 
-# === यहाँ नया कोड जोड़ा गया है ===
 @core_bp.route('/shipping-policy')
 def shipping_policy():
     return render_template('shipping_policy.html', title='Shipping Policy - TubeAlgo')
-# === यहाँ तक ===
 
 @core_bp.route('/terms-of-service')
 def terms():
