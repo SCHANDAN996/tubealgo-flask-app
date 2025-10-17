@@ -7,7 +7,7 @@ function aiGeneratorPage() {
         loadingMessage: '',
         topic: PAGE_DATA.initialTopic || '',
         step: 'initial', // 'initial', 'titles', 'description'
-        results: null,
+        results: { titles: [], tags: { main_keywords: [], secondary_keywords: [], broad_tags: [] } }, // Correctly initialized
         selectedTitleData: null,
         generatedDescription: '',
         csrfToken: '',
@@ -34,8 +34,6 @@ function aiGeneratorPage() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        // Note: Flask-WTF usually checks CSRF on form submissions.
-                        // If your API endpoint is protected, you'll need to send the token.
                         'X-CSRFToken': this.csrfToken 
                     },
                     body: JSON.stringify({ topic: this.topic })
