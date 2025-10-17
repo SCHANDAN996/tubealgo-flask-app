@@ -4,7 +4,7 @@ from flask import render_template, request, redirect, url_for, flash, Blueprint
 from flask_login import login_required, current_user
 from flask_wtf import FlaskForm
 from tubealgo import db
-from tubealgo.models import User
+from tubealgo.models import User, log_system_event # log_system_event को यहाँ जोड़ें
 from tubealgo.services.notification_service import send_telegram_message
 
 settings_bp = Blueprint('settings', __name__)
@@ -106,11 +106,12 @@ def telegram_settings():
 @settings_bp.route('/settings/request-deletion', methods=['POST'])
 @login_required
 def request_data_deletion():
-    # In a real app, this would trigger a more complex process (e.g., email to admin, automated job)
-    # For the compliance review, showing the request was received is sufficient.
-    
-    # You can add logic here to email yourself:
-    # send_email_to_admin(f"Data deletion request for user: {current_user.email}")
-    
+    # एडमिन को सूचित करने के लिए यह लाइन जोड़ें
+    log_system_event(
+        message=f"Data deletion request received from user: {current_user.email}",
+        log_type='USER_ACTION',  # आप कोई भी टाइप दे सकते हैं
+        details={'user_id': current_user.id, 'email': current_user.email}
+    )
+
     flash('Your data deletion request has been received. We will process it within 7 business days.', 'success')
     return redirect(url_for('settings.settings'))
