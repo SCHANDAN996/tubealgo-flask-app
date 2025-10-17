@@ -14,6 +14,10 @@ payment_bp = Blueprint('payment', __name__)
 @payment_bp.route('/create_cashfree_order', methods=['POST'])
 @login_required
 def create_cashfree_order():
+    # 1. सबसे पहले जांचें कि यूजर का फोन नंबर मौजूद है या नहीं
+    if not current_user.phone_number:
+        return jsonify({'error': 'Please add your phone number in the Settings page before making a payment.'}), 400
+
     try:
         data = request.get_json()
         plan_id = data.get('plan')
@@ -40,7 +44,7 @@ def create_cashfree_order():
             "customer_details": {
                 "customer_id": str(current_user.id),
                 "customer_email": current_user.email,
-                "customer_phone": "9999999999" 
+                "customer_phone": current_user.phone_number # 2. यहाँ नकली नंबर की जगह असली नंबर का उपयोग किया गया है
             },
             "order_meta": {
                 "return_url": url_for('payment.cashfree_verification', _external=True) + "?order_id={order_id}"
@@ -102,12 +106,6 @@ def cashfree_verification():
             flash('Payment record not found.', 'error')
             return redirect(url_for('core.pricing'))
         
-        # In production, you should always verify the status via a server-to-server API call
-        # For now, we trust the status from the redirect for simplicity.
-        # Let's assume the payment status is sent back in the query parameters, although this might not be the case.
-        # A more robust check with the Cashfree API is recommended.
-        
-        # A simplified check for this example. We verify the order status with Cashfree's server.
         cashfree_app_id = current_app.config.get('CASHFREE_APP_ID')
         cashfree_secret_key = current_app.config.get('CASHFREE_SECRET_KEY')
         cashfree_env = current_app.config.get('CASHFREE_ENV', 'PROD')
@@ -127,10 +125,9 @@ def cashfree_verification():
             
             if actual_payment_status in ['PAID', 'SUCCESS']:
                 current_user.subscription_plan = payment.plan_id
-                # Set subscription end date to 30 days from now
                 current_user.subscription_end_date = datetime.utcnow() + timedelta(days=30)
                 payment.status = 'captured'
-                payment.razorpay_payment_id = order_data.get('cf_order_id', '') # Storing Cashfree's ID
+                payment.razorpay_payment_id = order_data.get('cf_order_id', '') 
                 db.session.commit()
                 flash('Payment successful! Your subscription has been activated for 30 days.', 'success')
                 return redirect(url_for('dashboard.dashboard'))
@@ -152,8 +149,6 @@ def cashfree_verification():
 def cashfree_webhook():
     try:
         webhook_data = request.get_json()
-        
-        # In a real application, you MUST verify the webhook signature here for security.
         
         order_id = webhook_data.get('data', {}).get('order', {}).get('order_id')
         payment_status = webhook_data.get('data', {}).get('order', {}).get('order_status', '').upper()
