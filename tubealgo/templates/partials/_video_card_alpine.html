@@ -1,0 +1,60 @@
+<div class="group relative bg-card p-3 rounded-lg border shadow-sm hover:shadow-md hover:border-primary transition-all duration-200 flex flex-col"
+     x-data="{ 
+         tooltip: { show: false, text: '' },
+         showTooltip(text) {
+             if (!text) return;
+             this.tooltip.text = text;
+             this.tooltip.show = true;
+         },
+         hideTooltip() {
+             this.tooltip.show = false;
+         }
+     }">
+
+    <a :href="'/video/' + video.id" class="block">
+        <img :src="video.thumbnail" :alt="video.title" class="rounded-md mb-2 w-full aspect-video object-cover">
+    </a>
+
+    <h4 class="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary flex-grow" x-text="video.title"></h4>
+
+    <div class="text-xs text-muted-foreground mt-2 pt-2 border-t border-dashed space-y-1.5">
+        
+        <div class="flex justify-between items-center" @mouseenter="showTooltip(`Views: ${Number(video.view_count).toLocaleString()}`)" @mouseleave="hideTooltip()">
+            <span class="flex items-center gap-2">
+                <i class="fa-solid fa-eye fa-fw w-4 text-center"></i>
+                <span>Views:</span>
+            </span>
+            <span class="font-semibold text-foreground" x-text="Number(video.view_count).toLocaleString()"></span>
+        </div>
+
+        <div class="flex justify-between items-center" @mouseenter="showTooltip(`Likes: ${Number(video.like_count).toLocaleString()}`)" @mouseleave="hideTooltip()">
+            <span class="flex items-center gap-2">
+                <i class="fa-solid fa-heart fa-fw w-4 text-center text-red-500"></i>
+                <span>Likes:</span>
+            </span>
+            <span class="font-semibold text-foreground" x-text="Number(video.like_count).toLocaleString()"></span>
+        </div>
+
+        <div class="flex justify-between items-center" @mouseenter="showTooltip(`Comments: ${Number(video.comment_count).toLocaleString()}`)" @mouseleave="hideTooltip()">
+            <span class="flex items-center gap-2">
+                <i class="fa-solid fa-comments fa-fw w-4 text-center text-green-500"></i>
+                <span>Comments:</span>
+            </span>
+            <span class="font-semibold text-foreground" x-text="Number(video.comment_count).toLocaleString()"></span>
+        </div>
+        
+        <div class="flex justify-between items-center" @mouseenter="showTooltip(`Uploaded: ${new Date(video.upload_date).toLocaleString()}`)" @mouseleave="hideTooltip()">
+            <span class="flex items-center gap-2">
+                <i class="fa-solid fa-calendar-days fa-fw w-4 text-center"></i>
+                <span>Time:</span>
+            </span>
+            <span class="font-semibold text-foreground" x-text="formatRelativeTimeAlpine(video.upload_date)"></span>
+        </div>
+
+    </div>
+    <div x-show="tooltip.show" x-transition
+         class="absolute z-20 px-3 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap"
+         :style="`bottom: 105%; left: 50%; transform: translateX(-50%);`"
+         x-text="tooltip.text">
+    </div>
+</div>

@@ -1,0 +1,110 @@
+{% extends "admin/admin_layout.html" %}
+{% block title %}Site Settings{% endblock %}
+{% block header_title %}Site Settings{% endblock %}
+
+{% block content %}
+<form method="POST" class="space-y-6">
+    <div class="bg-card p-6 rounded-lg border">
+        <h3 class="text-lg font-semibold border-b pb-2 mb-4">General Settings</h3>
+        <div>
+            <label for="MEASUREMENT_ID" class="font-medium text-foreground">Google Analytics ID</label>
+            <p class="text-sm text-muted-foreground mb-2">Example: G-XXXXXXXXXX</p>
+            <input type="text" name="MEASUREMENT_ID" value="{{ settings.get('MEASUREMENT_ID', '') }}" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+        </div>
+        <div class="mt-4">
+            <label for="site_announcement" class="font-medium text-foreground">Site Announcement</label>
+            <p class="text-sm text-muted-foreground mb-2">यह मैसेज सभी यूज़र्स को उनके डैशबोर्ड पर दिखेगा। खाली छोड़ने पर कुछ नहीं दिखेगा।</p>
+            <textarea name="site_announcement" id="site_announcement" rows="3" class="mt-1 block w-full bg-background border border-input rounded-md p-2">{{ settings.get('site_announcement', '') }}</textarea>
+        </div>
+    </div>
+
+    <div class="bg-card p-6 rounded-lg border">
+        <h3 class="text-lg font-semibold border-b pb-2 mb-4">Feature Flags</h3>
+        <p class="text-sm text-muted-foreground mb-4">यहाँ से वेबसाइट के फीचर्स को अस्थायी रूप से चालू या बंद करें।</p>
+        <div class="space-y-4">
+            <label class="flex items-center justify-between p-3 bg-secondary rounded-lg">
+                <div>
+                    <p class="font-semibold text-foreground">Referral System</p>
+                    <p class="text-sm text-muted-foreground">यूज़र्स के लिए रेफरल सिस्टम को चालू/बंद करें।</p>
+                </div>
+                <div class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="feature_referral_system" value="True" class="sr-only peer" {% if settings.get('feature_referral_system', 'True') == 'True' %}checked{% endif %}>
+                    <div class="w-11 h-6 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </div>
+            </label>
+            <label class="flex items-center justify-between p-3 bg-secondary rounded-lg">
+                <div>
+                    <p class="font-semibold text-foreground">Video Upload Feature</p>
+                    <p class="text-sm text-muted-foreground">यूज़र्स को वीडियो अपलोड करने की सुविधा दें।</p>
+                </div>
+                <div class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="feature_video_upload" value="True" class="sr-only peer" {% if settings.get('feature_video_upload', 'True') == 'True' %}checked{% endif %}>
+                    <div class="w-11 h-6 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </div>
+            </label>
+        </div>
+    </div>
+    
+    <div class="bg-card p-6 rounded-lg border">
+        <h3 class="text-lg font-semibold border-b pb-2 mb-4">API Key Management</h3>
+        <p class="text-sm text-muted-foreground mb-4">यहाँ सेव की गई Key, `.env` फाइल की Key को ओवरराइड कर देगी। रीसेट करने पर यह `.env` वाली Key का उपयोग करेगा।</p>
+        
+        <div class="mb-4 bg-blue-500/10 p-4 rounded-lg border border-blue-500/20">
+            <div class="flex justify-between items-center">
+                <label class="font-bold text-blue-800">Admin Telegram Chat ID</label>
+                <form action="{{ url_for('admin.reset_setting', key_name='ADMIN_TELEGRAM_CHAT_ID') }}" method="POST" onsubmit="return confirm('Are you sure you want to reset this setting?')">
+                    <button type="submit" class="text-xs text-destructive hover:underline font-semibold">Reset</button>
+                </form>
+            </div>
+            <p class="text-xs text-blue-700 mt-1">यहाँ अपना पर्सनल Chat ID डालें ताकि आपको सिस्टम अलर्ट मिल सकें।</p>
+            <input type="text" name="ADMIN_TELEGRAM_CHAT_ID" value="{{ settings.get('ADMIN_TELEGRAM_CHAT_ID', '') }}" class="mt-2 block w-full bg-background border border-input rounded-md p-2" placeholder="Enter numeric Chat ID for admin alerts">
+        </div>
+        <hr class="my-6">
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% macro api_key_input(key_name, label, placeholder) %}
+            <div>
+                <div class="flex justify-between items-center">
+                    <label class="font-medium">{{ label }}</label>
+                    <form action="{{ url_for('admin.reset_setting', key_name=key_name) }}" method="POST" onsubmit="return confirm('Are you sure you want to reset this key? This will revert to the value in the .env file, if it exists.')">
+                        <button type="submit" class="text-xs text-destructive hover:underline font-semibold">Reset</button>
+                    </form>
+                </div>
+                <p class="text-xs text-muted-foreground font-mono">Current: {{ mask_key(key_name) }}</p>
+                <input type="password" name="{{ key_name }}" class="mt-1 block w-full bg-background border border-input rounded-md p-2" placeholder="{{ placeholder }}">
+            </div>
+            {% endmacro %}
+
+            <div class="space-y-6">
+                {{ api_key_input('OPENAI_API_KEY', 'OpenAI API Key', 'Enter new key to update') }}
+                {{ api_key_input('YOUTUBE_API_KEYS', 'YouTube API Keys (comma-separated)', 'Enter new keys to update') }}
+                {{ api_key_input('TELEGRAM_BOT_TOKEN', 'Telegram Bot Token', 'Enter new token to update') }}
+            </div>
+            <div class="space-y-6">
+                {{ api_key_input('RAZORPAY_KEY_ID', 'Razorpay Key ID', 'Enter new key to update') }}
+                {{ api_key_input('RAZORPAY_KEY_SECRET', 'Razorpay Key Secret', 'Enter new key to update') }}
+                {{ api_key_input('GOOGLE_CLIENT_ID', 'Google Client ID', 'Enter new ID to update') }}
+                {{ api_key_input('GOOGLE_CLIENT_SECRET', 'Google Client Secret', 'Enter new secret to update') }}
+            </div>
+        </div>
+    </div>
+    
+    <div class="bg-card p-6 rounded-lg border">
+        <h3 class="text-lg font-semibold border-b pb-2 mb-4">SEO Settings</h3>
+        <div class="space-y-4">
+            <div>
+                <label class="font-medium">Homepage Title</label>
+                <input type="text" name="seo_home_title" value="{{ settings.get('seo_home_title', '') }}" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+            </div>
+            <div>
+                <label class="font-medium">Homepage Description</label>
+                <textarea name="seo_home_description" class="mt-1 block w-full bg-background border border-input rounded-md p-2" rows="2">{{ settings.get('seo_home_description', '') }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-right">
+        <button type="submit" class="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-semibold">Save All Settings</button>
+    </div>
+</form>
+{% endblock %}

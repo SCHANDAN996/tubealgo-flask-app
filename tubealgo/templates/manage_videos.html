@@ -1,0 +1,95 @@
+{% extends "yt_manager_layout.html" %}
+
+{% block manager_content %}
+<div x-data='{
+    videos: {{ videos|tojson }},
+    filter: "all",
+    sortBy: "newest",
+
+    get filteredAndSortedVideos() {
+        let filtered = [...this.videos];
+
+        if (this.filter === "shorts") {
+            filtered = filtered.filter(v => v.is_short);
+        } else if (this.filter === "videos") {
+            filtered = filtered.filter(v => !v.is_short);
+        }
+
+        if (this.sortBy === "newest") {
+            filtered.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+        } else if (this.sortBy === "views") {
+            filtered.sort((a, b) => b.view_count - a.view_count);
+        }
+
+        return filtered;
+    }
+}'>
+    <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <div class="flex items-center gap-2 bg-card p-1 rounded-lg border">
+            <button @click="filter = 'all'" :class="{ 'bg-primary text-primary-foreground': filter === 'all', 'hover:bg-secondary': filter !== 'all' }" class="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors">All</button>
+            <button @click="filter = 'videos'" :class="{ 'bg-primary text-primary-foreground': filter === 'videos', 'hover:bg-secondary': filter !== 'videos' }" class="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors">Videos</button>
+            <button @click="filter = 'shorts'" :class="{ 'bg-primary text-primary-foreground': filter === 'shorts', 'hover:bg-secondary': filter !== 'shorts' }" class="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors">Shorts</button>
+        </div>
+        <div>
+            <label for="sort" class="text-sm font-medium text-muted-foreground mr-2">Sort by:</label>
+            <select x-model="sortBy" id="sort" class="bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="newest">Newest First</option>
+                <option value="views">Most Viewed</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <template x-for="video in filteredAndSortedVideos" :key="video.id">
+            <div class="bg-card rounded-xl border shadow-sm flex flex-col overflow-hidden group">
+                <div class="relative">
+                    <a :href="'/manage/edit/' + video.id">
+                        <img :src="video.thumbnail" :alt="video.title" class="w-full aspect-video object-cover">
+                    </a>
+                    <div class="absolute top-2 right-2 flex items-center gap-1">
+                        <template x-if="video.is_short">
+                            <span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-bolt"></i> Short</span>
+                        </template>
+                        <template x-if="video.privacy_status === 'private'">
+                            <span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-lock"></i> Private</span>
+                        </template>
+                         <template x-if="video.privacy_status === 'unlisted'">
+                            <span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-link"></i> Unlisted</span>
+                        </template>
+                    </div>
+                </div>
+                <div class="p-4 flex-grow flex flex-col">
+                    <h3 class="font-bold text-foreground leading-tight line-clamp-2" x-text="video.title"></h3>
+                    <p class="text-xs text-muted-foreground mt-1" x-text="'Published on ' + new Date(video.published_at).toLocaleDateString()"></p>
+                    <div class="mt-4 flex-grow grid grid-cols-3 gap-2 text-center text-sm">
+                        <div>
+                            <p class="font-bold text-foreground" x-text="video.view_count.toLocaleString()"></p>
+                            <p class="text-xs text-muted-foreground">Views</p>
+                        </div>
+                        <div>
+                            <p class="font-bold text-foreground" x-text="video.like_count.toLocaleString()"></p>
+                            <p class="text-xs text-muted-foreground">Likes</p>
+                        </div>
+                        <div>
+                            <p class="font-bold text-foreground" x-text="video.comment_count.toLocaleString()"></p>
+                            <p class="text-xs text-muted-foreground">Comments</p>
+                        </div>
+                    </div>
+                    <a :href="'/manage/edit/' + video.id" class="mt-4 w-full bg-primary text-primary-foreground text-center py-2 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
+                        <i class="fa-solid fa-pencil mr-2"></i>Edit
+                    </a>
+                </div>
+            </div>
+        </template>
+    </div>
+    
+    <template x-if="filteredAndSortedVideos.length === 0">
+        <div class="text-center py-12 bg-card rounded-xl border border-dashed">
+            <h3 class="text-xl font-semibold text-foreground">No videos found</h3>
+            <p class="text-muted-foreground mt-2 max-w-md mx-auto">
+                No videos match the current filter.
+            </p>
+        </div>
+    </template>
+</div>
+{% endblock %}
