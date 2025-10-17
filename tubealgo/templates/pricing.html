@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
                         body: JSON.stringify({ plan: planId })
                     });
 
@@ -94,11 +94,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     let checkoutOptions = {
                         paymentSessionId: orderData.payment_session_id,
-                        returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
+                        mode: "redirect" // THE FIX IS HERE
                     }
                     
-                    // FIX IS HERE: Use .redirect() for the payment flow
-                    cashfree.redirect(checkoutOptions);
+                    // AND HERE: Using .checkout() again
+                    cashfree.checkout(checkoutOptions).then(function(result) {
+                        if (result.error) {
+                            console.error("Checkout error:", result.error);
+                            alert('Payment failed: ' + result.error.message);
+                        }
+                    });
 
                 } catch (error) {
                     console.error('Payment Error:', error);
