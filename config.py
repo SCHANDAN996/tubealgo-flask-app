@@ -17,10 +17,12 @@ class Config:
     MEASUREMENT_ID = os.environ.get('MEASUREMENT_ID')
 
     # OAuth Settings
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # Development only, disable in production if possible
+    # This should be inside a debug check in production
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
     # Database
     DATABASE_URL = os.environ.get("DATABASE_URL")
+    
     if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     
@@ -31,8 +33,6 @@ class Config:
     CASHFREE_SECRET_KEY = os.environ.get('CASHFREE_SECRET_KEY')
     CASHFREE_ENV = os.environ.get('CASHFREE_ENV', 'PROD')
 
-    # Celery Configuration
-# Celery Configuration
-CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-
+    # Celery Configuration (Corrected)
+    CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
