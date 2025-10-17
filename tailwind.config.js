@@ -44,18 +44,6 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        'brand-purple': '#7e22ce',
-        'brand-green': '#16a34a',
-        'brand-orange': '#ea580c',
-        'brand-red': '#dc2626',
-        'brand-teal': '#0d9488',
-        'brand-pink': '#db2777',
-        'brand-cyan': '#0891b2',
-        'brand-blue': '#2563eb',
-        'brand-indigo': '#4f46e5',
-        'brand-gray': '#6b7280',
-        'brand-yellow': '#f59e0b',
-        'brand-lime': '#84cc16'
       },
       borderRadius: {
         lg: `var(--radius)`,
@@ -64,5 +52,9 @@ module.exports = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  // ===== बदलाव यहाँ है: plugins सेक्शन को अपडेट किया गया है =====
+  plugins: [
+    require('tailwindcss-animate'),
+    require('@tailwindcss/typography'), // <-- यह नई लाइन जोड़ें
+  ],
 };

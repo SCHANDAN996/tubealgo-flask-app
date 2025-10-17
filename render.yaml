@@ -1,25 +1,34 @@
-# Filepath: render.yaml
-
 services:
+  # 1. Redis Service
+  # यह Celery के लिए मैसेज ब्रोकर का काम करेगा।
+  - name: redis
+    type: pserv
+    env: docker
+    image:
+      url: redis:7
+    plan: free # आप अपनी जरूरत के हिसाब से प्लान बदल सकते हैं
+
+  # 2. Web Service (आपका Flask ऐप)
+  # इसमें कोई बड़ा बदलाव नहीं है, बस redis service का लिंक जोड़ा गया है।
   - type: web
     name: tubealgo
     env: python
     plan: free
-
     buildCommand: "./build.sh"
     startCommand: "gunicorn run:app"
-
     envVars:
-      # === महत्वपूर्ण बदलाव यहाँ है ===
-      # हमने fromDatabase सेक्शन को हटा दिया है क्योंकि अब हम इसे सीधे डैशबोर्ड से सेट कर रहे हैं।
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: NODE_VERSION
         value: 20.10.0
       - key: SECRET_KEY
         generateValue: true
-      
-      # ये सभी Keys आपके Render डैशबोर्ड के "Environment" सेक्शन में होनी चाहिए
+      - key: REDIS_URL # <-- यह नई लाइन है
+        fromService:
+          type: pserv
+          name: redis
+          property: url
+      # बाकी की keys आपके Render डैशबोर्ड के "Environment" सेक्शन में होनी चाहिए
       - key: DATABASE_URL
         sync: false
       - key: YOUTUBE_API_KEYS
@@ -41,7 +50,77 @@ services:
       - key: CASHFREE_ENV
         value: "PROD"
 
-    autoDeploy: true
+  # 3. Celery Worker Service
+  # यह बैकग्राउंड में आपके tasks (जैसे डैशबोर्ड अपडेट) को चलाएगा।
+  - type: worker
+    name: celery-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A tubealgo.celery worker --loglevel=info"
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: pserv
+          name: redis
+          property: url
+      # बाकी की keys को भी यहाँ sync करना होगा
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: DATABASE_URL
+      - key: YOUTUBE_API_KEYS
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: YOUTUBE_API_KEYS
+      - key: GEMINI_API_KEY
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: GEMINI_API_KEY
+      - key: TELEGRAM_BOT_TOKEN
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: TELEGRAM_BOT_TOKEN
+
+  # 4. Celery Beat Service
+  # यह शेड्यूलर है जो बताएगा कि कौन सा task कब चलाना है।
+  - type: worker
+    name: celery-beat
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A tubealgo.celery beat --loglevel=info"
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: pserv
+          name: redis
+          property: url
+      # Beat को भी सभी keys की जरूरत पड़ेगी
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: DATABASE_URL
+      - key: YOUTUBE_API_KEYS
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: YOUTUBE_API_KEYS
+      - key: GEMINI_API_KEY
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: GEMINI_API_KEY
+      - key: TELEGRAM_BOT_TOKEN
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: TELEGRAM_BOT_TOKEN
 
 # यह सुनिश्चित करने के लिए कि आपका डेटाबेस मौजूद है, इस सेक्शन को YAML में रखें।
 databases:

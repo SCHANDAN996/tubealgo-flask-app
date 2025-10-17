@@ -30,3 +30,8 @@ class Config:
     CASHFREE_APP_ID = os.environ.get('CASHFREE_APP_ID')
     CASHFREE_SECRET_KEY = os.environ.get('CASHFREE_SECRET_KEY')
     CASHFREE_ENV = os.environ.get('CASHFREE_ENV', 'PROD')
+
+    # Celery Configuration
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL

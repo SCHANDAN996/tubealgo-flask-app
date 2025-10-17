@@ -8,9 +8,9 @@ echo "=== TubeAlgo Build Process Started ==="
 echo "📦 Installing Node.js dependencies..."
 npm install
 
-# Step 2: Build Tailwind CSS
-echo "🎨 Building Tailwind CSS..."
-npx tailwindcss -i ./static/css/main.css -o ./static/css/output.css --minify
+# Step 2: Build Tailwind CSS and JavaScript
+echo "🎨 Building assets..."
+npm run build
 
 # Step 3: Install Python dependencies
 echo "🐍 Installing Python dependencies..."

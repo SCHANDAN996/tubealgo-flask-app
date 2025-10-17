@@ -15,10 +15,12 @@ setuptools
 razorpay
 Flask-Limiter
 openpyxl
-textblob
 python-docx
 APScheduler
 SQLAlchemy
 pytz
 cashfree-pg
 google-generativeai
+celery
+redis
+eventlet
