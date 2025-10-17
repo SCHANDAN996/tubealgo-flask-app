@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ form.csrf_token._value() }}' },
                         body: JSON.stringify({ plan: planId })
                     });
 
@@ -94,10 +94,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     let checkoutOptions = {
                         paymentSessionId: orderData.payment_session_id,
-                        mode: "redirect" // THE FIX IS HERE
+                        mode: "redirect"
                     }
                     
-                    // AND HERE: Using .checkout() again
                     cashfree.checkout(checkoutOptions).then(function(result) {
                         if (result.error) {
                             console.error("Checkout error:", result.error);
