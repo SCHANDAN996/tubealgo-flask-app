@@ -37,7 +37,7 @@
                 <div class="my-6">
                     <span class="text-5xl font-extrabold">₹{{ (plan.price / 100)|int }}</span>
                     {% if plan.slashed_price %}
-                    <span class="text-xl line-through text-muted-foreground ml-2">₹{{ (plan.slashed_price / 100)|int }}</span>
+                        <span class="text-xl line-through text-muted-foreground ml-2">₹{{ (plan.slashed_price / 100)|int }}</span>
                     {% endif %}
                     <span class="text-muted-foreground">/month</span>
                 </div>
@@ -52,7 +52,7 @@
                 <button 
                     data-plan-id="{{ plan.plan_id }}"
                     class="payment-btn mt-8 w-full text-center py-3.5 rounded-lg font-semibold text-base transition-transform hover:scale-105
-                           {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
+                            {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
                            {% else %}bg-secondary text-secondary-foreground hover:bg-border
                            {% endif %}">
                     Upgrade Now
@@ -68,7 +68,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const paymentButtons = document.querySelectorAll('.payment-btn');
-    
     paymentButtons.forEach(button => {
         button.addEventListener('click', async function(e) {
             e.preventDefault();
@@ -98,13 +97,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         returnUrl: `{{ url_for('payment.cashfree_verification', _external=True) }}?order_id=${orderData.order_id}`
                     }
                     
-                    cashfree.checkout(checkoutOptions).then(function(result) {
-                        if (result.error) {
-                            console.error("Checkout error:", result.error);
-                            alert('Payment failed: ' + result.error.message);
-                        }
-                    });
-                    
+                    // FIX IS HERE: Use .redirect() for the payment flow
+                    cashfree.redirect(checkoutOptions);
+
                 } catch (error) {
                     console.error('Payment Error:', error);
                     alert('Could not initiate payment. Please try again.');
