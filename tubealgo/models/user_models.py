@@ -8,13 +8,14 @@ from datetime import date, datetime
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    profile_pic_url = db.Column(db.String(512), nullable=True) # <-- यह लाइन जोड़ी गई है
+    phone_number = db.Column(db.String(20), nullable=True) # <-- यह नई लाइन जोड़ी गई है
+    profile_pic_url = db.Column(db.String(512), nullable=True)
     password_hash = db.Column(db.String(256), nullable=False)
     
     google_access_token = db.Column(db.String(1024), nullable=True)
     google_refresh_token = db.Column(db.String(1024), nullable=True)
     google_token_expiry = db.Column(db.DateTime, nullable=True)
-
+   
     telegram_chat_id = db.Column(db.String(100), unique=True, nullable=True)
     default_channel_name = db.Column(db.String(100), nullable=True)
     default_social_handles = db.Column(db.Text, nullable=True)
@@ -30,6 +31,7 @@ class User(UserMixin, db.Model):
     referred_by = db.Column(db.String(20), nullable=True)
     referral_credits = db.Column(db.Integer, default=0)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
+    
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     status = db.Column(db.String(20), nullable=False, default='active')
 
@@ -45,6 +47,7 @@ class User(UserMixin, db.Model):
     competitors = db.relationship('Competitor', backref='user', lazy='dynamic', cascade="all, delete-orphan")
     search_history = db.relationship('SearchHistory', backref='user', lazy='dynamic', cascade="all, delete-orphan")
     payments = db.relationship('Payment', backref='user', lazy='dynamic')
+    
     goals = db.relationship('Goal', backref='user', lazy='dynamic')
     content_ideas = db.relationship('ContentIdea', backref='user', lazy='dynamic')
 
