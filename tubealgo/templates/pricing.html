@@ -64,7 +64,7 @@
     </div>
 </div>
 
-{# ++ नया: फोन नंबर मांगने के लिए पॉप-अप (Modal) का HTML #}
+{# फोन नंबर मांगने के लिए पॉप-अप (Modal) का HTML #}
 <div id="phone-modal" style="display: none;" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
     <div class="bg-card rounded-xl shadow-xl w-full max-w-sm mx-4">
         <div class="p-5 border-b">
@@ -86,7 +86,7 @@
 
 
 <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
-{# ++ नया: अपडेट किया गया जावास्क्रिप्ट #}
+{# अपडेट किया गया स्मार्ट जावास्क्रिप्ट #}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // --- जरूरी एलिमेंट्स को चुनें ---
@@ -121,6 +121,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const orderData = await orderResponse.json();
+
+            // डीबगिंग के लिए: देखें कि सर्वर से क्या जवाब आया
+            console.log("Response from server:", orderData); 
+            
             const cashfree = new Cashfree();
             
             cashfree.checkout({
@@ -146,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             
             {% if current_user.is_authenticated %}
-                // ++ नया स्मार्ट लॉजिक: जांचें कि फोन नंबर मौजूद है या नहीं
+                //  स्मार्ट लॉजिक: जांचें कि फोन नंबर मौजूद है या नहीं
                 if (USER_PHONE_NUMBER && /^\d{10,}$/.test(USER_PHONE_NUMBER)) {
                     // अगर नंबर है, तो सीधे पेमेंट शुरू करें
                     initiatePayment(this.dataset.planId, USER_PHONE_NUMBER, this);
