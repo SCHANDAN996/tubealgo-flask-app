@@ -19,13 +19,15 @@ def create_cashfree_order():
         plan_id = data.get('plan')
         phone_number = data.get('phone_number')
 
+        # फोन नंबर की जांच करें
         if not phone_number or not phone_number.isdigit() or len(phone_number) < 10:
             return jsonify({'error': 'A valid 10-digit phone number is required.'}), 400
 
         plan = SubscriptionPlan.query.filter_by(plan_id=plan_id).first()
         if not plan:
-            return jsonify({'error': 'Invalid plan'}), 400
+            return jsonify({'error': 'Invalid plan specified.'}), 400
 
+        # अगर यूजर के प्रोफाइल में फोन नंबर नहीं है, तो इसे सेव कर दें
         if not current_user.phone_number:
             current_user.phone_number = phone_number
             db.session.commit()
@@ -33,6 +35,9 @@ def create_cashfree_order():
         cashfree_app_id = current_app.config.get('CASHFREE_APP_ID')
         cashfree_secret_key = current_app.config.get('CASHFREE_SECRET_KEY')
         cashfree_env = current_app.config.get('CASHFREE_ENV', 'PROD')
+        
+        if not cashfree_app_id or not cashfree_secret_key:
+            return jsonify({'error': 'Payment gateway is not configured on the server.'}), 500
         
         base_url = "https://api.cashfree.com/pg" if cashfree_env == 'PROD' else "https://sandbox.cashfree.com/pg"
         order_id = f"order_{current_user.id}_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:8]}"
@@ -63,9 +68,10 @@ def create_cashfree_order():
         if response.status_code == 200:
             response_data = response.json()
             if response_data.get('payment_session_id'):
+                # Create a local record of the payment attempt
                 payment = Payment(
                     user_id=current_user.id,
-                    razorpay_payment_id="", 
+                    razorpay_payment_id="",  # Will be updated on verification
                     razorpay_order_id=order_id,
                     amount=plan.price,
                     currency='INR',
@@ -80,15 +86,16 @@ def create_cashfree_order():
                     'payment_session_id': response_data['payment_session_id']
                 })
             else:
-                return jsonify({'error': 'Failed to create payment session'}), 500
+                current_app.logger.error("Cashfree OK response but no payment_session_id.")
+                return jsonify({'error': 'Failed to create payment session from gateway.'}), 500
         else:
-            error_msg = response.json().get('message', 'Failed to create order')
+            error_msg = response.json().get('message', 'Failed to create order with payment gateway.')
+            current_app.logger.error(f"Cashfree API error: {response.status_code} - {response.text}")
             return jsonify({'error': error_msg}), response.status_code
             
     except Exception as e:
-        current_app.logger.error(f"Cashfree order creation error: {str(e)}", exc_info=True)
-        return jsonify({'error': 'An internal server error occurred'}), 500
-
+        current_app.logger.error(f"Cashfree order creation exception: {str(e)}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred during payment processing.'}), 500
 
 @payment_bp.route('/cashfree_verification')
 @login_required
@@ -103,7 +110,7 @@ def cashfree_verification():
         payment = Payment.query.filter_by(razorpay_order_id=order_id, user_id=current_user.id).first()
         
         if not payment:
-            flash('Payment record not found.', 'error')
+            flash('Payment record not found in our system.', 'error')
             return redirect(url_for('core.pricing'))
         
         cashfree_app_id = current_app.config.get('CASHFREE_APP_ID')
@@ -127,21 +134,21 @@ def cashfree_verification():
                 current_user.subscription_plan = payment.plan_id
                 current_user.subscription_end_date = datetime.utcnow() + timedelta(days=30)
                 payment.status = 'captured'
-                payment.razorpay_payment_id = order_data.get('cf_order_id', '') 
+                payment.razorpay_payment_id = order_data.get('cf_order_id', order_id) 
                 db.session.commit()
                 flash('Payment successful! Your subscription has been activated for 30 days.', 'success')
                 return redirect(url_for('dashboard.dashboard'))
             else:
                 payment.status = 'failed'
                 db.session.commit()
-                flash('Payment failed or is pending. Please try again.', 'error')
+                flash(f'Payment {actual_payment_status.lower()}. Please try again or contact support.', 'error')
                 return redirect(url_for('core.pricing'))
         else:
-            flash('Could not verify payment status with the gateway.', 'error')
+            flash('Could not verify payment status with the gateway. Please contact support.', 'error')
             return redirect(url_for('core.pricing'))
             
     except Exception as e:
-        current_app.logger.error(f"Cashfree verification error: {str(e)}")
+        current_app.logger.error(f"Cashfree verification exception: {str(e)}", exc_info=True)
         flash('Payment verification failed due to an unexpected error.', 'error')
         return redirect(url_for('core.pricing'))
 
@@ -166,5 +173,5 @@ def cashfree_webhook():
         return jsonify({'status': 'success'}), 200
         
     except Exception as e:
-        current_app.logger.error(f"Cashfree webhook error: {str(e)}")
+        current_app.logger.error(f"Cashfree webhook error: {str(e)}", exc_info=True)
         return jsonify({'status': 'error'}), 500
