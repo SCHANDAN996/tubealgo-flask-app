@@ -11,18 +11,33 @@ import uuid
 
 payment_bp = Blueprint('payment', __name__)
 
+# tubealgo/routes/payment_routes.py
+
+# ... (ऊपर के imports वैसे ही रहेंगे) ...
+
 @payment_bp.route('/create_cashfree_order', methods=['POST'])
 @login_required
 def create_cashfree_order():
     try:
-        data = request.get_json()
-        plan_id = data.get('plan')
-        phone_number = data.get('phone_number')
+        # ... (पिछला कोड वैसा ही रहेगा) ...
 
-        # फोन नंबर की जांच करें
-        if not phone_number or not phone_number.isdigit() or len(phone_number) < 10:
-            return jsonify({'error': 'A valid 10-digit phone number is required.'}), 400
+        cashfree_app_id = current_app.config.get('CASHFREE_APP_ID')
+        cashfree_secret_key = current_app.config.get('CASHFREE_SECRET_KEY')
+        cashfree_env = current_app.config.get('CASHFREE_ENV', 'PROD')
+        
+        # +++++++++++++ यह नई डीबग लाइन जोड़ें +++++++++++++
+        print(f"\n[CRITICAL DEBUG] The application is running in '{cashfree_env}' mode.\n")
+        # +++++++++++++++++++++++++++++++++++++++++++++++++++++
+        
+        base_url = "https://api.cashfree.com/pg" if cashfree_env == 'PROD' else "https://sandbox.cashfree.com/pg"
+        
+        # ... (बाकी का पूरा फंक्शन वैसा ही रहेगा) ...
 
+    except Exception as e:
+        current_app.logger.error(f"Cashfree order creation error: {str(e)}", exc_info=True)
+        return jsonify({'error': 'An internal server error occurred'}), 500
+
+# ... (बाकी की फाइल वैसी ही रहेगी) ...
         plan = SubscriptionPlan.query.filter_by(plan_id=plan_id).first()
         if not plan:
             return jsonify({'error': 'Invalid plan specified.'}), 400
