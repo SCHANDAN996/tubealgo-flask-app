@@ -14,17 +14,23 @@ payment_bp = Blueprint('payment', __name__)
 @payment_bp.route('/create_cashfree_order', methods=['POST'])
 @login_required
 def create_cashfree_order():
-    # 1. सबसे पहले जांचें कि यूजर का फोन नंबर मौजूद है या नहीं
-    if not current_user.phone_number:
-        return jsonify({'error': 'Please add your phone number in the Settings page before making a payment.'}), 400
-
     try:
         data = request.get_json()
         plan_id = data.get('plan')
-        
+        phone_number = data.get('phone_number') # ++ बदलाव: रिक्वेस्ट से फोन नंबर लें
+
+        # ++ बदलाव: फोन नंबर की जांच करें
+        if not phone_number or not phone_number.isdigit() or len(phone_number) < 10:
+            return jsonify({'error': 'A valid 10-digit phone number is required.'}), 400
+
         plan = SubscriptionPlan.query.filter_by(plan_id=plan_id).first()
         if not plan:
             return jsonify({'error': 'Invalid plan'}), 400
+
+        # ++ बदलाव: अगर यूजर के प्रोफाइल में नंबर नहीं है, तो इसे सेव कर दें
+        if not current_user.phone_number:
+            current_user.phone_number = phone_number
+            db.session.commit()
         
         cashfree_app_id = current_app.config.get('CASHFREE_APP_ID')
         cashfree_secret_key = current_app.config.get('CASHFREE_SECRET_KEY')
@@ -44,7 +50,7 @@ def create_cashfree_order():
             "customer_details": {
                 "customer_id": str(current_user.id),
                 "customer_email": current_user.email,
-                "customer_phone": current_user.phone_number # 2. यहाँ नकली नंबर की जगह असली नंबर का उपयोग किया गया है
+                "customer_phone": phone_number # ++ बदलाव: रिक्वेस्ट से मिला नंबर इस्तेमाल करें
             },
             "order_meta": {
                 "return_url": url_for('payment.cashfree_verification', _external=True) + "?order_id={order_id}"
