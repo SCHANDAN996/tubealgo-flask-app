@@ -37,7 +37,7 @@
                 <div class="my-6">
                     <span class="text-5xl font-extrabold">₹{{ (plan.price / 100)|int }}</span>
                     {% if plan.slashed_price %}
-                        <span class="text-xl line-through text-muted-foreground ml-2">₹{{ (plan.slashed_price / 100)|int }}</span>
+                         <span class="text-xl line-through text-muted-foreground ml-2">₹{{ (plan.slashed_price / 100)|int }}</span>
                     {% endif %}
                     <span class="text-muted-foreground">/month</span>
                 </div>
@@ -52,7 +52,7 @@
                 <button 
                     data-plan-id="{{ plan.plan_id }}"
                     class="payment-btn mt-8 w-full text-center py-3.5 rounded-lg font-semibold text-base transition-transform hover:scale-105
-                            {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
+                         {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
                            {% else %}bg-secondary text-secondary-foreground hover:bg-border
                            {% endif %}">
                     Upgrade Now
@@ -64,56 +64,124 @@
     </div>
 </div>
 
+{# ++ नया: फोन नंबर मांगने के लिए पॉप-अप (Modal) का HTML #}
+<div id="phone-modal" style="display: none;" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-card rounded-xl shadow-xl w-full max-w-sm mx-4">
+        <div class="p-5 border-b">
+            <h3 class="text-lg font-bold text-foreground">Confirm Your Phone Number</h3>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label for="phone_number_input" class="font-medium text-sm">Enter 10-digit mobile number</label>
+                <input type="tel" id="phone_number_input" class="mt-1 block w-full bg-background border border-input rounded-lg p-3 text-sm" placeholder="e.g., 9876543210">
+                <p id="phone-error" class="text-xs text-destructive mt-1" style="display: none;"></p>
+            </div>
+        </div>
+        <div class="px-6 py-4 bg-secondary/50 rounded-b-xl flex justify-end gap-3">
+            <button type="button" id="cancel-payment-btn" class="px-5 py-2 rounded-lg text-sm font-semibold bg-secondary text-secondary-foreground hover:bg-border">Cancel</button>
+            <button type="button" id="proceed-payment-btn" class="px-5 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90">Proceed to Pay</button>
+        </div>
+    </div>
+</div>
+
+
 <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+{# ++ नया: अपडेट किया गया जावास्क्रिप्ट #}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // --- जरूरी एलिमेंट्स को चुनें ---
     const paymentButtons = document.querySelectorAll('.payment-btn');
+    const modal = document.getElementById('phone-modal');
+    const phoneInput = document.getElementById('phone_number_input');
+    const proceedBtn = document.getElementById('proceed-payment-btn');
+    const cancelBtn = document.getElementById('cancel-payment-btn');
+    const phoneError = document.getElementById('phone-error');
+    
+    // --- यूजर का फोन नंबर (अगर मौजूद है तो) Flask से यहाँ आएगा ---
+    const USER_PHONE_NUMBER = '{{ current_user.phone_number or "" }}';
+
+    let selectedPlanId = null;
+    let originalButton = null;
+
+    // --- पेमेंट शुरू करने वाला मुख्य फंक्शन ---
+    async function initiatePayment(planId, phoneNumber, buttonElement) {
+        buttonElement.innerHTML = 'Processing...';
+        buttonElement.disabled = true;
+
+        try {
+            const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ form.csrf_token._value() }}' },
+                body: JSON.stringify({ plan: planId, phone_number: phoneNumber })
+            });
+
+            if (!orderResponse.ok) {
+                const errorData = await orderResponse.json();
+                throw new Error(errorData.error || 'Could not create order.');
+            }
+            
+            const orderData = await orderResponse.json();
+            const cashfree = new Cashfree();
+            
+            cashfree.checkout({
+                paymentSessionId: orderData.payment_session_id,
+                mode: "redirect"
+            }).then(function(result) {
+                if (result.error) {
+                    alert('Payment failed: ' + result.error.message);
+                }
+            });
+
+        } catch (error) {
+            alert('Could not initiate payment: ' + error.message);
+        } finally {
+            buttonElement.innerHTML = 'Upgrade Now';
+            buttonElement.disabled = false;
+        }
+    }
+
+    // --- सभी पेमेंट बटनों पर इवेंट लिस्नर लगाएं ---
     paymentButtons.forEach(button => {
-        button.addEventListener('click', async function(e) {
+        button.addEventListener('click', function(e) {
             e.preventDefault();
             
             {% if current_user.is_authenticated %}
-                const planId = this.dataset.planId;
-                this.innerHTML = 'Processing...';
-                this.disabled = true;
-
-                try {
-                    const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ form.csrf_token._value() }}' },
-                        body: JSON.stringify({ plan: planId })
-                    });
-
-                    if (!orderResponse.ok) {
-                        const errorData = await orderResponse.json();
-                        throw new Error(errorData.error || 'Could not create order.');
-                    }
-                    
-                    const orderData = await orderResponse.json();
-                    const cashfree = new Cashfree();
-                    
-                    let checkoutOptions = {
-                        paymentSessionId: orderData.payment_session_id,
-                        mode: "redirect"
-                    }
-                    
-                    cashfree.checkout(checkoutOptions).then(function(result) {
-                        if (result.error) {
-                            console.error("Checkout error:", result.error);
-                            alert('Payment failed: ' + result.error.message);
-                        }
-                    });
-
-                } catch (error) {
-                    console.error('Payment Error:', error);
-                    alert('Could not initiate payment. Please try again.');
-                    this.innerHTML = 'Upgrade Now';
-                    this.disabled = false;
+                // ++ नया स्मार्ट लॉजिक: जांचें कि फोन नंबर मौजूद है या नहीं
+                if (USER_PHONE_NUMBER && /^\d{10,}$/.test(USER_PHONE_NUMBER)) {
+                    // अगर नंबर है, तो सीधे पेमेंट शुरू करें
+                    initiatePayment(this.dataset.planId, USER_PHONE_NUMBER, this);
+                } else {
+                    // अगर नंबर नहीं है, तो पॉप-अप (Modal) दिखाएं
+                    selectedPlanId = this.dataset.planId;
+                    originalButton = this;
+                    phoneError.style.display = 'none';
+                    modal.style.display = 'flex';
                 }
             {% else %}
                 window.location.href = "{{ url_for('auth.signup') }}";
             {% endif %}
         });
+    });
+
+    // --- Modal के बटनों के लिए इवेंट लिस्नर ---
+    cancelBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    proceedBtn.addEventListener('click', () => {
+        const phoneNumber = phoneInput.value.trim();
+        
+        if (!/^\d{10}$/.test(phoneNumber)) {
+            phoneError.innerText = 'Please enter a valid 10-digit number.';
+            phoneError.style.display = 'block';
+            return;
+        }
+        
+        phoneError.style.display = 'none';
+        modal.style.display = 'none';
+        
+        // पॉप-अप से मिले नंबर के साथ पेमेंट शुरू करें
+        initiatePayment(selectedPlanId, phoneNumber, originalButton);
     });
 });
 </script>
