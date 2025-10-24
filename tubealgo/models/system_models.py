@@ -6,22 +6,24 @@ from datetime import datetime
 from .. import db
 from sqlalchemy.exc import OperationalError
 
+# --- SystemLog, log_system_event, is_admin_telegram_user ---
+# (यह कोड पहले जैसा ही रहेगा)
 class SystemLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    log_type = db.Column(db.String(50), nullable=False, index=True) # e.g., 'ERROR', 'QUOTA_EXCEEDED', 'INFO'
+    [cite_start]log_type = db.Column(db.String(50), nullable=False, index=True) # e.g., 'ERROR', 'QUOTA_EXCEEDED', 'INFO' [cite: 1697]
     message = db.Column(db.Text, nullable=False)
     details = db.Column(db.Text, nullable=True) # For full tracebacks or JSON data
 
 def log_system_event(message, log_type='INFO', details=None):
     """Logs an event to the database and sends a notification for critical errors."""
     try:
-        from ..services.notification_service import send_telegram_message 
-        
+        [cite_start]from ..services.notification_service import send_telegram_message # [cite: 1697]
+
         details_str = ""
         if details:
             if isinstance(details, dict):
-                details_str = json.dumps(details, indent=2)
+                [cite_start]details_str = json.dumps(details, indent=2) # [cite: 1698]
             else:
                 details_str = str(details)
 
@@ -33,20 +35,20 @@ def log_system_event(message, log_type='INFO', details=None):
         db.session.add(log_entry)
         db.session.commit()
 
-        CRITICAL_LOG_TYPES = ['QUOTA_EXCEEDED', 'ERROR']
+        [cite_start]CRITICAL_LOG_TYPES = ['QUOTA_EXCEEDED', 'ERROR'] # [cite: 1699]
         if log_type in CRITICAL_LOG_TYPES:
-            admin_chat_id = get_setting('ADMIN_TELEGRAM_CHAT_ID')
+            [cite_start]admin_chat_id = get_setting('ADMIN_TELEGRAM_CHAT_ID') # [cite: 1699]
             if admin_chat_id:
                 alert_title = "Critical Alert" if log_type == 'ERROR' else "Quota Alert"
                 icon = "🚨" if log_type == 'ERROR' else "⚠️"
-                
-                telegram_message = (
+
+                [cite_start]telegram_message = ( # [cite: 1700]
                     f"{icon} *{alert_title}: {log_type}*\n\n"
                     f"*Message:* {message}\n\n"
                 )
                 if details_str:
-                    telegram_message += f"*Details:* ```\n{details_str[:1000]}\n```" # Limit details length
-                
+                    [cite_start]telegram_message += f"*Details:* ```\n{details_str[:1000]}\n```" # [cite: 1701]
+
                 send_telegram_message(admin_chat_id, telegram_message)
 
     except Exception as e:
@@ -55,11 +57,12 @@ def log_system_event(message, log_type='INFO', details=None):
 
 def is_admin_telegram_user(chat_id):
     """Checks if a given Telegram chat_id belongs to the admin."""
-    admin_chat_id = get_setting('ADMIN_TELEGRAM_CHAT_ID')
-    if admin_chat_id and str(chat_id) == str(admin_chat_id):
+    [cite_start]admin_chat_id = get_setting('ADMIN_TELEGRAM_CHAT_ID') # [cite: 1701]
+    [cite_start]if admin_chat_id and str(chat_id) == str(admin_chat_id): # [cite: 1701]
         return True
-    return False
+    [cite_start]return False # [cite: 1702]
 
+# --- SiteSetting Model (महत्वपूर्ण हिस्सा) ---
 class SiteSetting(db.Model):
     key = db.Column(db.String(100), primary_key=True, unique=True, nullable=False)
     value = db.Column(db.Text, nullable=True)
@@ -72,26 +75,28 @@ def get_setting(key, default=None):
     try:
         setting = SiteSetting.query.get(key)
         if setting and setting.value is not None:
-            if setting.value.lower() == 'true': return True
-            if setting.value.lower() == 'false': return False
-            return setting.value
-    except OperationalError:
+            [cite_start]if setting.value.lower() == 'true': return True # [cite: 1702]
+            [cite_start]if setting.value.lower() == 'false': return False # [cite: 1702]
+            [cite_start]return setting.value # [cite: 1703]
+    [cite_start]except OperationalError: # [cite: 1703]
         # This can happen if the db is not initialized yet (e.g., during flask db init)
         return default
-    return default
+    [cite_start]return default # [cite: 1703]
 
 def get_config_value(key, default=None):
     """
     Gets a configuration value, prioritizing the database over environment variables.
     """
-    db_value = get_setting(key)
+    [cite_start]db_value = get_setting(key) # [cite: 1703]
     if db_value is not None:
-        if isinstance(db_value, bool):
+        [cite_start]if isinstance(db_value, bool): # [cite: 1703]
             return db_value
-        if db_value:
+        [cite_start]if db_value: # [cite: 1704]
             return db_value
-    return os.environ.get(key, default)
+    [cite_start]return os.environ.get(key, default) # [cite: 1704]
 
+# --- ApiCache, APIKeyStatus, DashboardCache ---
+# (यह कोड पहले जैसा ही रहेगा)
 class ApiCache(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     cache_key = db.Column(db.String(255), unique=True, nullable=False, index=True)
@@ -107,7 +112,7 @@ class APIKeyStatus(db.Model):
 class DashboardCache(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
-    data = db.Column(db.JSON, nullable=True)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    [cite_start]data = db.Column(db.JSON, nullable=True) # [cite: 1705]
+    [cite_start]updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow) # [cite: 1705]
 
-    user = db.relationship('User', backref=db.backref('dashboard_cache', uselist=False, cascade="all, delete-orphan"))
+    [cite_start]user = db.relationship('User', backref=db.backref('dashboard_cache', uselist=False, cascade="all, delete-orphan")) # [cite: 1705]
