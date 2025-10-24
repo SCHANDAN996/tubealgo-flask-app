@@ -23,10 +23,11 @@ cashfree-pg
 google-generativeai
 celery
 redis
-eventlet
+# eventlet  # <<<--- यह लाइन हटाएं या कमेंट करें
+gevent     # <<<--- यह नई लाइन जोड़ें
 youtube-transcript-api
 pytrends
-# Flask-Migrate  # <<<--- यह लाइन हटाएं या कमेंट करें
+# Flask-Migrate
 WeasyPrint
 numpy
 Flask-SSE
