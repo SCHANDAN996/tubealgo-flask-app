@@ -1,95 +1,406 @@
 {% extends "yt_manager_layout.html" %}
 
 {% block manager_content %}
-<div x-data='{
-    videos: {{ videos|tojson }},
-    filter: "all",
-    sortBy: "newest",
+{# --- x-cloak is applied to the main div --- #}
+<div x-data="videoManager()" x-cloak>
+    {{ form.hidden_tag() }} {# Renders CSRF token #}
 
-    get filteredAndSortedVideos() {
-        let filtered = [...this.videos];
-
-        if (this.filter === "shorts") {
-            filtered = filtered.filter(v => v.is_short);
-        } else if (this.filter === "videos") {
-            filtered = filtered.filter(v => !v.is_short);
-        }
-
-        if (this.sortBy === "newest") {
-            filtered.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
-        } else if (this.sortBy === "views") {
-            filtered.sort((a, b) => b.view_count - a.view_count);
-        }
-
-        return filtered;
-    }
-}'>
-    <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-        <div class="flex items-center gap-2 bg-card p-1 rounded-lg border">
-            <button @click="filter = 'all'" :class="{ 'bg-primary text-primary-foreground': filter === 'all', 'hover:bg-secondary': filter !== 'all' }" class="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors">All</button>
-            <button @click="filter = 'videos'" :class="{ 'bg-primary text-primary-foreground': filter === 'videos', 'hover:bg-secondary': filter !== 'videos' }" class="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors">Videos</button>
-            <button @click="filter = 'shorts'" :class="{ 'bg-primary text-primary-foreground': filter === 'shorts', 'hover:bg-secondary': filter !== 'shorts' }" class="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors">Shorts</button>
-        </div>
+    {# Selected Videos Bar #}
+    <div x-show="selectedVideos.length > 0 && bulkEditMode" x-transition class="sticky top-20 z-30 bg-primary/90 text-primary-foreground backdrop-blur-sm rounded-lg shadow-lg p-3 mb-6 flex justify-between items-center">
+         <span class="font-semibold" x-text="`${selectedVideos.length} video(s) selected`"></span>
+         {# --- Shows remaining edits if limit exists --- #}
+         <span x-show="dailyLimit !== Infinity" class="text-xs opacity-80" x-text="`(${remainingEdits} edits remaining today)`"></span>
         <div>
-            <label for="sort" class="text-sm font-medium text-muted-foreground mr-2">Sort by:</label>
-            <select x-model="sortBy" id="sort" class="bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="newest">Newest First</option>
-                <option value="views">Most Viewed</option>
-            </select>
+            <button @click="openBulkEditModal()" class="bg-white text-primary font-semibold px-4 py-2 rounded-md hover:bg-gray-200 text-sm">
+                <i class="fa-solid fa-pencil mr-2"></i>Edit Selected
+            </button>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    {# --- Filters and Sort section --- #}
+    <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <div class="flex items-center gap-4 flex-wrap"> {# Added flex-wrap #}
+            {# --- "Select All" checkbox conditional --- #}
+            <div x-show="bulkEditMode" x-transition class="flex items-center">
+                {# --- Added :indeterminate binding --- #}
+                <input type="checkbox" @change="toggleSelectAll($event)" :checked="isAllSelected" :indeterminate="isIndeterminate" id="select-all-checkbox" class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary">
+                 <label for="select-all-checkbox" class="ml-2 text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
+            </div>
+             {# --- Div to show limit message --- #}
+             <div x-show="bulkEditMode && limitMessage" x-transition class="text-xs text-yellow-600 font-medium" x-text="limitMessage"></div>
+            {# --- Filter buttons (pill style) --- #}
+            <div class="flex items-center gap-2">
+                 <button @click="filter = 'all'"
+                         class="text-xs font-semibold px-4 py-2 rounded-full transition-colors"
+                         :class="{ 'bg-primary text-primary-foreground shadow': filter === 'all', 'bg-secondary text-muted-foreground hover:bg-border': filter !== 'all' }">
+                     All
+                 </button>
+                 <button @click="filter = 'videos'"
+                        class="text-xs font-semibold px-4 py-2 rounded-full transition-colors"
+                        :class="{ 'bg-primary text-primary-foreground shadow': filter === 'videos', 'bg-secondary text-muted-foreground hover:bg-border': filter !== 'videos' }">
+                    Videos
+                 </button>
+                <button @click="filter = 'shorts'"
+                        class="text-xs font-semibold px-4 py-2 rounded-full transition-colors"
+                        :class="{ 'bg-primary text-primary-foreground shadow': filter === 'shorts', 'bg-secondary text-muted-foreground hover:bg-border': filter !== 'shorts' }">
+                     Shorts
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap sm:flex-nowrap"> {# Added flex-wrap #}
+             {# --- Bulk Edit/Cancel button --- #}
+             <button @click="toggleBulkEditMode()"
+                     class="px-4 py-2 rounded-lg font-semibold text-sm transition-colors w-32 text-center"
+                     :class="bulkEditMode ? 'bg-red-500/10 text-red-700 hover:bg-red-500/20' : 'bg-primary text-primary-foreground hover:bg-primary/90'">
+                 <span x-show="!bulkEditMode"><i class="fa-solid fa-pencil-alt mr-2"></i> Bulk Edit</span>
+                 <span x-show="bulkEditMode"><i class="fa-solid fa-times mr-2"></i> Cancel Edit</span>
+             </button>
+            {# --- Sort section (segmented control style) --- #}
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-muted-foreground mr-1">Sort by:</span>
+                <div class="flex items-center gap-1 bg-secondary p-1 rounded-lg border">
+                     <button @click="sortBy = 'newest'"
+                            class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                            :class="{ 'bg-primary text-primary-foreground shadow': sortBy === 'newest', 'text-muted-foreground hover:bg-border': sortBy !== 'newest' }">
+                         Newest First
+                    </button>
+                    <button @click="sortBy = 'views'"
+                            class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors"
+                            :class="{ 'bg-primary text-primary-foreground shadow': sortBy === 'views', 'text-muted-foreground hover:bg-border': sortBy !== 'views' }">
+                        Most Viewed
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {# --- End Filters and Sort section --- #}
+
+    {# --- Video Grid --- #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <template x-for="video in filteredAndSortedVideos" :key="video.id">
-            <div class="bg-card rounded-xl border shadow-sm flex flex-col overflow-hidden group">
-                <div class="relative">
-                    <a :href="'/manage/edit/' + video.id">
-                        <img :src="video.thumbnail" :alt="video.title" class="w-full aspect-video object-cover">
-                    </a>
-                    <div class="absolute top-2 right-2 flex items-center gap-1">
-                        <template x-if="video.is_short">
-                            <span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-bolt"></i> Short</span>
-                        </template>
-                        <template x-if="video.privacy_status === 'private'">
-                            <span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-lock"></i> Private</span>
-                        </template>
-                         <template x-if="video.privacy_status === 'unlisted'">
-                            <span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-link"></i> Unlisted</span>
-                        </template>
+            <div class="group relative bg-card p-3 rounded-xl border shadow-sm hover:shadow-md hover:border-primary transition-all duration-200 flex flex-col"
+                 :class="{ 'ring-2 ring-primary border-primary': selectedVideos.includes(video.id) }"
+                 @click="handleCardClick(video.id)"
+                 x-data="{
+                    tooltip: { show: false, text: '' },
+                    showTooltip(text) { if (!text) return; this.tooltip.text = text; this.tooltip.show = true; },
+                    hideTooltip() { this.tooltip.show = false; }
+                 }">
+
+                <div x-show="bulkEditMode" x-transition class="absolute top-2 left-2 z-10" @click.stop>
+                    <input type="checkbox" :value="video.id" x-model="selectedVideos" :id="'video-checkbox-' + video.id"
+                           class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary shadow cursor-pointer"
+                           {# --- Disable checkbox if limit reached and not already selected --- #}
+                           :disabled="!selectedVideos.includes(video.id) && dailyLimit !== Infinity && selectedVideos.length >= remainingEdits">
+                </div>
+
+                {# Link to edit page (prevented in bulk edit mode) #}
+                 {# Updated @click to allow navigation in normal mode #}
+                <a :href="'/manage/edit/' + video.id" class="block" @click="if(bulkEditMode) $event.preventDefault(); else window.location.href=$el.href">
+                    <div class="relative">
+                        <img :src="video.thumbnail" :alt="video.title" class="rounded-lg mb-2 w-full aspect-video object-cover">
+                         <div class="absolute top-2 right-2 flex items-center gap-1">
+                            <template x-if="video.is_short"><span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-bolt"></i> Short</span></template>
+                            <template x-if="video.privacy_status === 'private'"><span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-lock"></i> Private</span></template>
+                             <template x-if="video.privacy_status === 'unlisted'"><span class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm"><i class="fa-solid fa-link"></i> Unlisted</span></template>
+                        </div>
+                    </div>
+                </a>
+
+                 <h4 class="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary flex-grow" x-text="video.title"></h4>
+
+                <div class="text-xs text-muted-foreground mt-2 pt-2 border-t border-dashed space-y-1.5">
+                    <div class="flex justify-between items-center" @mouseenter="showTooltip(`Views: ${Number(video.view_count).toLocaleString()}`)" @mouseleave="hideTooltip()">
+                         <span class="flex items-center gap-2">
+                             <i class="fa-solid fa-eye fa-fw w-4 text-center"></i>
+                            <span>Views:</span>
+                        </span>
+                        <span class="font-semibold text-foreground" x-text="Number(video.view_count).toLocaleString()"></span>
+                    </div>
+                    <div class="flex justify-between items-center" @mouseenter="showTooltip(`Likes: ${Number(video.like_count).toLocaleString()}`)" @mouseleave="hideTooltip()">
+                         <span class="flex items-center gap-2">
+                            <i class="fa-solid fa-thumbs-up fa-fw w-4 text-center"></i>
+                            <span>Likes:</span>
+                        </span>
+                        <span class="font-semibold text-foreground" x-text="Number(video.like_count).toLocaleString()"></span>
+                    </div>
+                    <div class="flex justify-between items-center" @mouseenter="showTooltip(`Comments: ${Number(video.comment_count).toLocaleString()}`)" @mouseleave="hideTooltip()">
+                        <span class="flex items-center gap-2">
+                            <i class="fa-solid fa-comments fa-fw w-4 text-center"></i> {# Color removed #}
+                            <span>Comments:</span>
+                        </span>
+                        <span class="font-semibold text-foreground" x-text="Number(video.comment_count).toLocaleString()"></span>
+                    </div>
+                     <div class="flex justify-between items-center" @mouseenter="showTooltip(`Published: ${new Date(video.published_at).toLocaleString()}`)" @mouseleave="hideTooltip()">
+                        <span class="flex items-center gap-2">
+                            <i class="fa-solid fa-calendar-days fa-fw w-4 text-center"></i>
+                            <span>Time:</span>
+                        </span>
+                        <span class="font-semibold text-foreground" x-text="formatRelativeTime(video.published_at)"></span>
                     </div>
                 </div>
-                <div class="p-4 flex-grow flex flex-col">
-                    <h3 class="font-bold text-foreground leading-tight line-clamp-2" x-text="video.title"></h3>
-                    <p class="text-xs text-muted-foreground mt-1" x-text="'Published on ' + new Date(video.published_at).toLocaleDateString()"></p>
-                    <div class="mt-4 flex-grow grid grid-cols-3 gap-2 text-center text-sm">
-                        <div>
-                            <p class="font-bold text-foreground" x-text="video.view_count.toLocaleString()"></p>
-                            <p class="text-xs text-muted-foreground">Views</p>
-                        </div>
-                        <div>
-                            <p class="font-bold text-foreground" x-text="video.like_count.toLocaleString()"></p>
-                            <p class="text-xs text-muted-foreground">Likes</p>
-                        </div>
-                        <div>
-                            <p class="font-bold text-foreground" x-text="video.comment_count.toLocaleString()"></p>
-                            <p class="text-xs text-muted-foreground">Comments</p>
-                        </div>
-                    </div>
-                    <a :href="'/manage/edit/' + video.id" class="mt-4 w-full bg-primary text-primary-foreground text-center py-2 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
-                        <i class="fa-solid fa-pencil mr-2"></i>Edit
-                    </a>
+
+                <div class="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-2">
+                     <a :href="'/manage/analytics/' + video.id" @click.stop
+                        class="w-full text-xs font-semibold py-1.5 rounded-md transition-colors flex items-center justify-center gap-2
+                               bg-primary text-primary-foreground hover:bg-primary/90">
+                         <i class="fa-solid fa-chart-line"></i> Analytics
+                     </a>
+                     <a :href="'/manage/edit/' + video.id" @click.stop
+                        class="w-full text-xs font-semibold py-1.5 rounded-md transition-colors flex items-center justify-center gap-2
+                               bg-primary text-primary-foreground hover:bg-primary/90">
+                        <i class="fa-solid fa-pencil"></i> Edit
+                     </a>
+                </div>
+
+                 {# Tooltip Div #}
+                <div x-show="tooltip.show" x-transition
+                     class="absolute z-20 px-3 py-2 text-sm font-semibold text-white bg-gray-900 rounded-lg shadow-lg whitespace-nowrap"
+                     :style="`bottom: 105%; left: 50%; transform: translateX(-50%);`"
+                     x-text="tooltip.text">
                 </div>
             </div>
         </template>
     </div>
-    
+    {# --- End Video Grid --- #}
+
+    {# No Videos Found Message #}
     <template x-if="filteredAndSortedVideos.length === 0">
         <div class="text-center py-12 bg-card rounded-xl border border-dashed">
             <h3 class="text-xl font-semibold text-foreground">No videos found</h3>
-            <p class="text-muted-foreground mt-2 max-w-md mx-auto">
-                No videos match the current filter.
-            </p>
+             <p class="text-muted-foreground mt-2 max-w-md mx-auto">No videos match the current filter.</p>
         </div>
     </template>
+
+    {# --- Bulk Edit Modal --- #}
+    <div x-show="showBulkEditModal" x-transition class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @keydown.escape.window="showBulkEditModal = false" x-cloak>
+         <div @click.away="showBulkEditModal = false" class="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="p-5 border-b flex justify-between items-center">
+                 <h3 class="text-lg font-bold text-foreground" x-text="`Bulk Edit ${selectedVideos.length} Video(s)`"></h3>
+                <button @click="showBulkEditModal = false" class="text-muted-foreground hover:text-foreground text-2xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto">
+                 {# Form fields for tags, description, visibility go here as before #}
+                 <div class="space-y-4 border border-border p-4 rounded-lg">
+                    <h4 class="text-base font-semibold text-foreground mb-3">Modify Tags</h4>
+                    <div>
+                        <label class="font-medium text-sm text-foreground">Tags to Add</label>
+                         <p class="text-xs text-muted-foreground mb-1">These tags will be added to all selected videos (if not already present). Separate with commas.</p>
+                        <input type="text" x-model="bulkEditData.tags_to_add" class="w-full bg-background border border-input rounded-lg p-2 text-sm" placeholder="e.g., new tag, 2025, promo">
+                    </div>
+                     <div>
+                        <label class="font-medium text-sm text-foreground">Tags to Remove</label>
+                        <p class="text-xs text-muted-foreground mb-1">These tags will be removed from all selected videos (if present). Separate with commas.</p>
+                        <input type="text" x-model="bulkEditData.tags_to_remove" class="w-full bg-background border border-input rounded-lg p-2 text-sm" placeholder="e.g., old tag, 2024">
+                     </div>
+                </div>
+                <div class="space-y-4 border border-border p-4 rounded-lg">
+                    <h4 class="text-base font-semibold text-foreground mb-3">Modify Description</h4>
+                     <div>
+                        <label class="font-medium text-sm text-foreground">Append to Description</label>
+                        <p class="text-xs text-muted-foreground mb-1">This text will be added to the end of the description for all selected videos.</p>
+                        <textarea x-model="bulkEditData.description_append" class="w-full bg-background border border-input rounded-lg p-2 text-sm" rows="4" placeholder="e.g.,&#10;---&#10;Check out my new course: https://example.com"></textarea>
+                    </div>
+                 </div>
+                 <div class="space-y-4 border border-border p-4 rounded-lg">
+                    <h4 class="text-base font-semibold text-foreground mb-3">Modify Visibility</h4>
+                    <div>
+                        <label class="font-medium text-sm text-foreground">Change Privacy Status</label>
+                         <select x-model="bulkEditData.privacy_status" class="mt-1 block w-full bg-background border border-input rounded-lg p-3 text-sm">
+                             <option value="">-- Don't Change --</option>
+                            <option value="public">Public</option>
+                            <option value="unlisted">Unlisted</option>
+                            <option value="private">Private</option>
+                        </select>
+                    </div>
+                 </div>
+
+                 {# --- Updated Disclaimer Section --- #}
+                <div class="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                     <label class="flex items-start space-x-3 cursor-pointer">
+                        <input type="checkbox" x-model="disclaimerChecked" class="mt-1 h-4 w-4 rounded border-yellow-400 text-primary focus:ring-primary">
+                        <div class="flex-1">
+                            <p class="text-sm font-semibold text-yellow-800 dark:text-yellow-200">Acknowledgement & Understanding</p>
+                             <div class="mt-1 text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                                <p><strong>Please read carefully before proceeding:</strong></p>
+                                <ul class="list-disc list-inside pl-2">
+                                     {# --- Display dynamic limits passed from Python --- #}
+                                     <li><strong>API Quota Usage:</strong> This feature uses YouTube API quota for **each** selected video. Your daily limit depends on your plan (Free: {{ daily_limits.free }}, Creator: {{ daily_limits.creator }}, Pro: {{ daily_limits.pro }}). Exceeding this limit will prevent further edits today. Using this feature contributes to the application's overall quota, potentially impacting other users if used excessively.</li>
+                                     <li><strong>Processing Time:</strong> Changes are applied **in the background** via Celery and may take several minutes depending on the number of videos and YouTube API responsiveness.</li>
+                                     <li><strong>Potential Failures:</strong> Due to API limitations, quota issues, or temporary errors, updates for some videos **may fail**. The completion notification will indicate successes and failures.</li>
+                                     <li><strong>Irreversible Action:</strong> Bulk changes are difficult to undo individually. Please double-check your selections.</li>
+                                     <li><strong>Compliance:</strong> This tool is intended for efficient management, not for spamming or violating YouTube's Terms of Service. Use responsibly.</li>
+                                </ul>
+                                <p class="mt-2">By checking this box, you confirm you understand these points and wish to proceed.</p>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+                 {# --- End Updated Disclaimer --- #}
+            </div>
+            <div class="px-6 py-4 bg-secondary/50 rounded-b-xl flex justify-end gap-3">
+                 <button type="button" @click="showBulkEditModal = false" class="px-5 py-2 rounded-lg text-sm font-semibold bg-secondary text-secondary-foreground hover:bg-border">Cancel</button>
+                <button @click="submitBulkEdit()" :disabled="!disclaimerChecked || isBulkUpdating" class="px-5 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center w-40 disabled:bg-primary/50 disabled:cursor-not-allowed">
+                     <span x-show="!isBulkUpdating">Apply Changes</span>
+                    <span x-show="isBulkUpdating"><i class="fa-solid fa-spinner animate-spin"></i> Processing...</span>
+                 </button>
+            </div>
+        </div>
+    </div>
+    {# --- End Bulk Edit Modal --- #}
+
+    {# --- Confirmation Modal (Unchanged) --- #}
+    <div x-show="showConfirmModal" x-transition.opacity class="fixed inset-0 bg-black/60 z-[1000] flex items-center justify-center p-4" x-cloak>
+         <div @click.away="showConfirmModal = false" class="bg-card rounded-xl shadow-xl w-full max-w-sm mx-4 text-center p-6">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-destructive/10">
+                 <i class="fa-solid fa-triangle-exclamation text-destructive text-xl"></i>
+            </div>
+            <div class="mt-4">
+                <h3 class="text-lg leading-6 font-bold text-foreground">Confirm Bulk Edit</h3>
+                 <div class="mt-2">
+                    <p class="text-sm text-muted-foreground">Are you sure you want to apply these changes to <strong x-text="selectedVideos.length"></strong> videos? This action cannot be undone.</p>
+                </div>
+            </div>
+            <div class="mt-6 flex gap-3">
+                 <button @click="showConfirmModal = false" type="button" class="flex-1 inline-flex justify-center rounded-lg shadow-sm px-4 py-2 bg-secondary text-base font-medium text-foreground hover:bg-border">
+                     Cancel
+                </button>
+                <button @click="proceedWithBulkEdit()" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-destructive text-base font-medium text-white hover:bg-destructive/90">
+                     Yes, Apply Changes
+                </button>
+            </div>
+        </div>
+    </div>
+    {# --- End Confirmation Modal --- #}
+
 </div>
+
+<script>
+    function videoManager() {
+        return {
+             videos: {{ videos|tojson }},
+            filter: 'all',
+            sortBy: 'newest',
+            selectedVideos: [],
+             showBulkEditModal: false,
+            showConfirmModal: false,
+            bulkEditData: { tags_to_add: '', tags_to_remove: '', description_append: '', privacy_status: '' },
+             isBulkUpdating: false,
+            disclaimerChecked: false,
+            bulkEditMode: false,
+
+             get isAllSelected() {
+                const visibleIds = this.filteredAndSortedVideos.map(v => v.id);
+                if (visibleIds.length === 0 || !this.bulkEditMode) return false;
+                return visibleIds.every(id => this.selectedVideos.includes(id));
+            },
+
+            get filteredAndSortedVideos() {
+                 let filtered = [...this.videos];
+                if (this.filter === 'shorts') {
+                    filtered = filtered.filter(v => v.is_short);
+                } else if (this.filter === 'videos') {
+                    filtered = filtered.filter(v => !v.is_short);
+                }
+                if (this.sortBy === 'newest') {
+                     filtered.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+                } else if (this.sortBy === 'views') {
+                    filtered.sort((a, b) => b.view_count - a.view_count);
+                }
+                return filtered;
+            },
+
+             toggleBulkEditMode() {
+                this.bulkEditMode = !this.bulkEditMode;
+                if (!this.bulkEditMode) {
+                    this.selectedVideos = [];
+                }
+            },
+
+             toggleSelectAll(event) {
+                if (!this.bulkEditMode) return;
+                const visibleIds = this.filteredAndSortedVideos.map(v => v.id);
+                if (event.target.checked) {
+                    this.selectedVideos = [...new Set([...this.selectedVideos, ...visibleIds])];
+                } else {
+                    this.selectedVideos = this.selectedVideos.filter(id => !visibleIds.includes(id));
+                }
+            },
+
+            handleCardClick(videoId) {
+                if (this.bulkEditMode) {
+                    const index = this.selectedVideos.indexOf(videoId);
+                    if (index > -1) {
+                         this.selectedVideos.splice(index, 1);
+                    } else {
+                        this.selectedVideos.push(videoId);
+                    }
+                } else {
+                    // Normal mode link works by default via <a> tag
+                }
+            },
+
+             openBulkEditModal() {
+                this.bulkEditData = { tags_to_add: '', tags_to_remove: '', description_append: '', privacy_status: '' };
+                this.disclaimerChecked = false;
+                this.showBulkEditModal = true;
+            },
+
+            submitBulkEdit() {
+                if (this.selectedVideos.length === 0) {
+                     alert('Please select at least one video.');
+                    return;
+                }
+                 if (!this.disclaimerChecked) {
+                     alert('Please read and acknowledge the disclaimer by checking the box before proceeding.');
+                     return;
+                }
+                this.showConfirmModal = true;
+            },
+
+             async proceedWithBulkEdit() {
+                 this.showConfirmModal = false;
+                this.isBulkUpdating = true;
+                const payload = { video_ids: this.selectedVideos, operations: this.bulkEditData };
+                try {
+                    const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+                    const response = await fetch('/manage/videos/bulk-edit', {
+                        method: 'POST',
+                         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (!response.ok) { throw new Error(data.error || 'An unknown error occurred.'); }
+                     alert(data.message);
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                } finally {
+                     this.isBulkUpdating = false;
+                    this.showBulkEditModal = false;
+                    this.selectedVideos = [];
+                    this.bulkEditMode = false;
+                    window.location.reload(); // Reload to reflect changes or show errors
+                }
+            },
+
+            formatRelativeTime(isoDate) {
+                 if (!isoDate) return '';
+                const dt = new Date(isoDate);
+                const now = new Date();
+                const diff = (now.getTime() - dt.getTime()) / 1000;
+                if (diff < 60) return 'just now';
+                const minutes = Math.floor(diff / 60);
+                if (minutes < 60) return `${minutes}m ago`;
+                const hours = Math.floor(minutes / 60);
+                if (hours < 24) return `${hours}h ago`;
+                const days = Math.floor(hours / 24);
+                return `${days}d ago`;
+            }
+        }
+    }
+
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('videoManager', videoManager);
+    });
+</script>
 {% endblock %}

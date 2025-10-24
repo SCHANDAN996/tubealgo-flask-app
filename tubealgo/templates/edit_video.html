@@ -9,9 +9,9 @@
         csrfToken: "{{ form.csrf_token._value() }}",
         hasCompetitors: {{ has_competitors|tojson }},
         urls: {
-            generateTitles: "{{ url_for('manager.api_generate_titles') }}",
-            generateTags: "{{ url_for('manager.api_generate_tags') }}",
-            generateDescription: "{{ url_for('manager.api_generate_description') }}",
+            generateTitles: "{{ url_for('ai_api.api_generate_titles') }}",
+            generateTags: "{{ url_for('ai_api.api_generate_tags') }}",
+            generateDescription: "{{ url_for('ai_api.api_generate_description') }}",
             keywordSuggestions: "{{ url_for('tool.api_keyword_suggestions') }}",
             competitorsPage: "{{ url_for('competitor.competitors') }}"
         },

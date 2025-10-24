@@ -23,6 +23,25 @@
         </a>
 
         <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm">
+            <h2 class="text-2xl font-bold text-foreground mb-4">Localization</h2>
+            <form method="POST" action="{{ url_for('settings.settings') }}">
+                {{ form.csrf_token }}
+                <div>
+                    <label for="timezone" class="font-medium text-foreground">Your Timezone:</label>
+                    <p class="text-sm text-muted-foreground mb-2">This will adjust all dates and times across the app to your local time.</p>
+                    <select name="timezone" id="timezone" class="mt-1 w-full bg-background border border-input rounded-lg px-4 py-2">
+                        {% for tz in all_timezones %}
+                            <option value="{{ tz }}" {% if tz == current_user.timezone %}selected{% endif %}>{{ tz }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="text-right mt-4">
+                    <button type="submit" name="action" value="update_timezone" class="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-semibold">Save Timezone</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="bg-card p-6 sm:p-8 rounded-xl border shadow-sm">
             <h2 class="text-2xl font-bold text-foreground mb-4">Account Information</h2>
             <form method="POST" action="{{ url_for('settings.settings') }}">
                 {{ form.csrf_token }}
@@ -72,7 +91,6 @@
                 <p class="text-xs text-muted-foreground mt-2">This will send a request to our team to delete all data associated with your account, including connected channels and competitor data.</p>
             </div>
         </div>
-
     </div>
 </div>
 {% endblock %}

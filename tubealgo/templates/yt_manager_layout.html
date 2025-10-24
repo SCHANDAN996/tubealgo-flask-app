@@ -4,31 +4,58 @@
 <div class="max-w-7xl mx-auto">
     <div class="text-center mb-8">
         <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 bg-brand-red/10 text-brand-red">
-            <i class="fa-brands fa-youtube text-3xl"></i>
+            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="w-8 h-8">
         </div>
         <h1 class="text-4xl font-bold text-foreground font-display">YT Manager</h1>
-        <p class="text-lg text-muted-foreground mt-2">Manage your YouTube videos and playlists directly.</p>
+        <p class="text-lg text-muted-foreground mt-2">Manage your YouTube videos, playlists, and run tests.</p>
     </div>
 
+    {# *** FIX: Added overflow-x-auto *** #}
     <div class="border-b border-border mb-6">
-        <nav class="-mb-px flex space-x-6">
-            <a href="{{ url_for('manager.manage_videos') }}" 
+        <nav class="-mb-px flex space-x-6 overflow-x-auto">
+
+            <a href="{{ url_for('manager.manage_videos') }}"
                class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
-                      {% if request.endpoint == 'manager.manage_videos' %}
-                        border-primary text-primary
+                      {% if request.endpoint.startswith('manager.') %}
+                           border-primary text-primary
                       {% else %}
-                        border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
+                           border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
                       {% endif %}">
                 Videos
             </a>
-            <a href="{{ url_for('manager.manage_playlists') }}" 
+
+            <a href="{{ url_for('playlist_manager.manage_playlists') }}"
                class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
-                      {% if request.endpoint == 'manager.manage_playlists' %}
+                      {% if request.endpoint.startswith('playlist_manager.') %}
                         border-primary text-primary
                       {% else %}
                         border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
                       {% endif %}">
                 Playlists
+            </a>
+
+            {# --- यह पूरा 'a' टैग हटा दिया गया है या कमेंट कर दिया गया है --- #}
+            {#
+            <a href="{{ url_for('comment.comment_manager') }}"
+                class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
+                      {% if request.endpoint.startswith('comment.') %}
+                        border-primary text-primary
+                      {% else %}
+                           border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
+                      {% endif %}">
+                Comments
+            </a>
+            #}
+            {# --- यहाँ तक --- #}
+
+            <a href="{{ url_for('ab_test.dashboard') }}"
+               class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
+                      {% if request.endpoint.startswith('ab_test.') %}
+                        border-primary text-primary
+                      {% else %}
+                        border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
+                      {% endif %}">
+                A/B Testing
             </a>
         </nav>
     </div>

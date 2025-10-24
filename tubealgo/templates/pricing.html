@@ -9,7 +9,8 @@
             <p class="text-xl text-muted-foreground mt-4 max-w-2xl mx-auto">Choose the plan that's right for your channel's growth journey.</p>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-5xl mx-auto items-start">
-            
+
+            {# Free Plan Card #}
             <div class="bg-card p-8 rounded-xl border shadow-sm flex flex-col">
                 <h3 class="text-2xl font-bold">Free</h3>
                 <p class="text-muted-foreground mt-2 h-12">For new creators getting started.</p>
@@ -20,9 +21,11 @@
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>3 AI Generations/day</li>
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>3 AI Playlist Ideas</li>
                 </ul>
-                <a href="{{ url_for('auth.signup') }}" class="mt-8 block w-full text-center bg-secondary text-secondary-foreground py-3.5 rounded-lg font-semibold hover:bg-border text-base transition-transform hover:scale-105">Get Started</a>
+                {# --- बदलाव यहाँ: signup लिंक ठीक किया गया --- #}
+                <a href="{{ url_for('auth_local.signup') }}" class="mt-8 block w-full text-center bg-secondary text-secondary-foreground py-3.5 rounded-lg font-semibold hover:bg-border text-base transition-transform hover:scale-105">Get Started</a>
             </div>
 
+            {# Paid Plan Cards (Loop) #}
             {% for plan in plans %}
             <div class="bg-card p-8 rounded-xl border-2 flex flex-col relative {% if plan.is_popular %}border-primary shadow-lg{% else %}border-border{% endif %}">
                 {% if plan.is_popular %}
@@ -48,11 +51,12 @@
                     <li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>{{ plan.playlist_suggestions_limit if plan.playlist_suggestions_limit != -1 else 'Unlimited' }} AI Playlist Ideas</li>
                     {% if plan.has_ai_suggestions %}<li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>AI Video Suggestions</li>{% endif %}
                     {% if plan.has_discover_tools %}<li class="flex items-center"><i class="fa-solid fa-check text-green-500 mr-3"></i>Discover Tools</li>{% endif %}
+                    {# You might want to add other plan features here if they exist in your SubscriptionPlan model #}
                 </ul>
-                <button 
+                <button
                     data-plan-id="{{ plan.plan_id }}"
                     class="payment-btn mt-8 w-full text-center py-3.5 rounded-lg font-semibold text-base transition-transform hover:scale-105
-                         {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
+                            {% if plan.is_popular %}bg-primary text-primary-foreground hover:bg-primary/90
                            {% else %}bg-secondary text-secondary-foreground hover:bg-border
                            {% endif %}">
                     Upgrade Now
@@ -72,8 +76,9 @@
         </div>
         <div class="p-6 space-y-4">
             <div>
-                <label for="phone_number_input" class="font-medium text-sm">Enter 10-digit mobile number</label>
-                <input type="tel" id="phone_number_input" class="mt-1 block w-full bg-background border border-input rounded-lg p-3 text-sm" placeholder="e.g., 9876543210">
+                <label for="phone_number_input" class="font-medium text-sm text-foreground">Enter 10-digit mobile number</label>
+                {# --- बदलाव यहाँ: type="tel" और maxlength="10" जोड़ा गया --- #}
+                <input type="tel" id="phone_number_input" maxlength="10" class="mt-1 block w-full bg-background border border-input rounded-lg p-3 text-sm" placeholder="e.g., 9876543210">
                 <p id="phone-error" class="text-xs text-destructive mt-1" style="display: none;"></p>
             </div>
         </div>
@@ -96,12 +101,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const proceedBtn = document.getElementById('proceed-payment-btn');
     const cancelBtn = document.getElementById('cancel-payment-btn');
     const phoneError = document.getElementById('phone-error');
-    
+
     // --- यूजर का फोन नंबर (अगर मौजूद है तो) Flask से यहाँ आएगा ---
     const USER_PHONE_NUMBER = '{{ current_user.phone_number or "" }}';
+    // --- CSRF टोकन प्राप्त करें ---
+    const CSRF_TOKEN = '{{ form.csrf_token._value() }}';
 
     let selectedPlanId = null;
-    let originalButton = null;
+    let originalButton = null; // पेमेंट बटन को स्टोर करने के लिए
 
     // --- पेमेंट शुरू करने वाला मुख्य फंक्शन ---
     async function initiatePayment(planId, phoneNumber, buttonElement) {
@@ -111,34 +118,40 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const orderResponse = await fetch("{{ url_for('payment.create_cashfree_order') }}", {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ form.csrf_token._value() }}' },
-                body: JSON.stringify({ plan: planId, phone_number: phoneNumber })
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ plan: planId, phone_number: phoneNumber }) // फोन नंबर भेजें
             });
 
             if (!orderResponse.ok) {
                 const errorData = await orderResponse.json();
                 throw new Error(errorData.error || 'Could not create order.');
             }
-            
-            const orderData = await orderResponse.json();
 
-            // डीबगिंग के लिए: देखें कि सर्वर से क्या जवाब आया
-            console.log("Response from server:", orderData); 
-            
+            const orderData = await orderResponse.json();
+            console.log("Response from server:", orderData); // सर्वर से प्रतिक्रिया देखें
+
+            // Cashfree ऑब्जेक्ट बनाएं और चेकआउट शुरू करें
             const cashfree = new Cashfree();
-            
             cashfree.checkout({
                 paymentSessionId: orderData.payment_session_id,
-                mode: "redirect"
+                mode: "redirect" // या "popup" अगर आप पॉपअप चाहते हैं
             }).then(function(result) {
                 if (result.error) {
+                    // पेमेंट एरर हैंडल करें
+                    console.error("Cashfree Checkout Error:", result.error);
                     alert('Payment failed: ' + result.error.message);
                 }
+                // सफलता पर Cashfree रीडायरेक्ट करेगा या वेरिफिकेशन कॉल होगा
+            }).catch(function(error) {
+                 console.error("Cashfree SDK Error:", error);
+                 alert('Payment initiation failed: ' + error.message);
             });
 
         } catch (error) {
+            console.error('Initiate Payment Error:', error);
             alert('Could not initiate payment: ' + error.message);
         } finally {
+            // बटन को उसकी मूल स्थिति में वापस लाएं (अगर रीडायरेक्ट नहीं हुआ)
             buttonElement.innerHTML = 'Upgrade Now';
             buttonElement.disabled = false;
         }
@@ -148,44 +161,61 @@ document.addEventListener('DOMContentLoaded', function() {
     paymentButtons.forEach(button => {
         button.addEventListener('click', function(e) {
             e.preventDefault();
-            
+
             {% if current_user.is_authenticated %}
-                //  स्मार्ट लॉजिक: जांचें कि फोन नंबर मौजूद है या नहीं
+                // स्मार्ट लॉजिक: जांचें कि फोन नंबर मौजूद है या नहीं
                 if (USER_PHONE_NUMBER && /^\d{10,}$/.test(USER_PHONE_NUMBER)) {
                     // अगर नंबर है, तो सीधे पेमेंट शुरू करें
                     initiatePayment(this.dataset.planId, USER_PHONE_NUMBER, this);
                 } else {
                     // अगर नंबर नहीं है, तो पॉप-अप (Modal) दिखाएं
                     selectedPlanId = this.dataset.planId;
-                    originalButton = this;
-                    phoneError.style.display = 'none';
-                    modal.style.display = 'flex';
+                    originalButton = this; // वर्तमान बटन को सेव करें
+                    phoneInput.value = ''; // इनपुट खाली करें
+                    phoneError.style.display = 'none'; // एरर छिपाएं
+                    modal.style.display = 'flex'; // मोडाल दिखाएं
+                    phoneInput.focus(); // इनपुट पर फोकस करें
                 }
             {% else %}
-                window.location.href = "{{ url_for('auth.signup') }}";
+                // अगर यूजर लॉग इन नहीं है, तो साइनअप पेज पर भेजें
+                window.location.href = "{{ url_for('auth_local.signup') }}";
             {% endif %}
         });
     });
 
     // --- Modal के बटनों के लिए इवेंट लिस्नर ---
     cancelBtn.addEventListener('click', () => {
-        modal.style.display = 'none';
+        modal.style.display = 'none'; // मोडाल छिपाएं
     });
 
     proceedBtn.addEventListener('click', () => {
         const phoneNumber = phoneInput.value.trim();
-        
+
+        // फोन नंबर वैलिडेशन (सिर्फ 10 अंक)
         if (!/^\d{10}$/.test(phoneNumber)) {
-            phoneError.innerText = 'Please enter a valid 10-digit number.';
+            phoneError.innerText = 'Please enter a valid 10-digit mobile number.';
             phoneError.style.display = 'block';
             return;
         }
-        
-        phoneError.style.display = 'none';
-        modal.style.display = 'none';
-        
+
+        phoneError.style.display = 'none'; // एरर छिपाएं
+        modal.style.display = 'none'; // मोडाल छिपाएं
+
         // पॉप-अप से मिले नंबर के साथ पेमेंट शुरू करें
-        initiatePayment(selectedPlanId, phoneNumber, originalButton);
+        if (selectedPlanId && originalButton) {
+            initiatePayment(selectedPlanId, phoneNumber, originalButton);
+        } else {
+             console.error("Error: Plan ID or Original Button not set before proceeding from modal.");
+             alert("An error occurred. Please try clicking the plan button again.");
+        }
+    });
+
+    // फोन इनपुट पर Enter दबाने पर भी पेमेंट शुरू करें
+    phoneInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // फॉर्म सबमिट होने से रोकें
+            proceedBtn.click(); // Proceed बटन को क्लिक करें
+        }
     });
 });
 </script>
