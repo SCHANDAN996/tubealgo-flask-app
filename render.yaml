@@ -21,7 +21,7 @@ services:
     plan: free #
     buildCommand: "./build.sh" #
     # --- Start command runs Gunicorn with Gevent worker --- ### यह लाइन बदली गई है ###
-    startCommand: "gunicorn --worker-class gevent -w 1 run:app" # <<<--- बदलाव यहाँ है
+    startCommand: "gunicorn --workers=1 --worker-class=gevent run:app" # <<<--- नई, ज़्यादा स्पष्ट लाइन
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0 # अपना Python version डालें
