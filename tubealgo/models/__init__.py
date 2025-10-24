@@ -4,7 +4,11 @@
 from .. import db
 
 # Now, import all the model classes and related functions from their new files
-from .system_models import SystemLog, ApiCache, APIKeyStatus, SiteSetting, log_system_event, is_admin_telegram_user, get_setting, get_config_value, DashboardCache
+from .system_models import (
+    SystemLog, ApiCache, APIKeyStatus, SiteSetting,
+    log_system_event, is_admin_telegram_user, get_setting, get_config_value,
+    DashboardCache
+)
 from .user_models import User, SearchHistory, ContentIdea, Goal, load_user
 from .youtube_models import YouTubeChannel, ChannelSnapshot, Competitor, ThumbnailTest, VideoSnapshot
 from .payment_models import Coupon, Payment, SubscriptionPlan
@@ -13,8 +17,13 @@ from .payment_models import Coupon, Payment, SubscriptionPlan
 # This allows other parts of the application to still do `from tubealgo.models import User`
 __all__ = [
     "db",
-    "SystemLog", "ApiCache", "APIKeyStatus", "SiteSetting", "log_system_event", "is_admin_telegram_user", "get_setting", "get_config_value", "DashboardCache",
+    # System Models & Functions
+    "SystemLog", "ApiCache", "APIKeyStatus", "SiteSetting", "DashboardCache",
+    "log_system_event", "is_admin_telegram_user", "get_setting", "get_config_value",
+    # User Models & Functions
     "User", "SearchHistory", "ContentIdea", "Goal", "load_user",
+    # YouTube Models
     "YouTubeChannel", "ChannelSnapshot", "Competitor", "ThumbnailTest", "VideoSnapshot",
+    # Payment Models
     "Coupon", "Payment", "SubscriptionPlan"
 ]
