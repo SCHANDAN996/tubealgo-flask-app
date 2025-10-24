@@ -36,7 +36,7 @@
 
                 {# --- प्लान बदलने वाला फॉर्म --- #}
                 <form action="{{ url_for('admin.upgrade_user', user_id=user.id) }}" method="POST" class="border-t pt-4">
-                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ें #}
+                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ा गया #}
                     <label for="plan" class="text-sm font-medium">Change Plan:</label>
                     <div class="flex items-center gap-2 mt-2">
                         <select name="plan" id="plan" class="flex-grow bg-background border-input rounded-lg py-2 px-3">
@@ -51,7 +51,7 @@
                 {% if user.subscription_plan != 'free' %}
                 {# --- सब्सक्रिप्शन अवधि बदलने वाला फॉर्म --- #}
                 <form action="{{ url_for('admin.update_subscription', user_id=user.id) }}" method="POST" class="border-t pt-4">
-                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ें #}
+                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ा गया #}
                     <label for="days_to_add" class="text-sm font-medium">Modify Subscription Duration:</label>
                      <p class="text-xs text-muted-foreground">Enter a positive number to add days, or a negative number to remove days.</p>
                     <div class="flex items-center gap-2 mt-2">
@@ -70,7 +70,7 @@
             <div class="space-y-4">
                 {# --- स्टेटस बदलने वाला फॉर्म --- #}
                 <form action="{{ url_for('admin.toggle_user_status', user_id=user.id) }}" method="POST">
-                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ें #}
+                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ा गया #}
                     {% if user.status == 'active' %}
                         <button type="submit" class="w-full bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-600">Suspend User</button>
                     {% else %}
@@ -80,13 +80,13 @@
 
                 {# --- अकाउंट रीसेट करने वाला फॉर्म --- #}
                 <form action="{{ url_for('admin.reset_user', user_id=user.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to reset this user? This will delete their connected channel, competitors, and dashboard data but will NOT delete their account.');">
-                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ें #}
+                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ा गया #}
                     <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700">Reset User Account</button>
                 </form>
 
                 {# --- यूजर डिलीट करने वाला फॉर्म --- #}
                 <form action="{{ url_for('admin.delete_user', user_id=user.id) }}" method="POST" onsubmit="return confirm('DANGER: Are you sure you want to PERMANENTLY DELETE this user? This action cannot be undone.');">
-                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ें #}
+                    {{ csrf_token() }} {# <<<--- CSRF टोकन यहाँ जोड़ा गया #}
                     <button type="submit" class="w-full bg-destructive text-destructive-foreground px-4 py-2 rounded-lg font-semibold hover:bg-destructive/90">Delete User Permanently</button>
                 </form>
             </div>
