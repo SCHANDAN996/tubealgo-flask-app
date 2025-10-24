@@ -21,8 +21,9 @@ services:
     plan: free # Adjust plan as needed (e.g., standard-0)
     # --- Build command executes build.sh ---
     buildCommand: "./build.sh"
-    # --- Start command runs Gunicorn ---
+    # --- Start command runs Gunicorn (Consider Eventlet worker) ---
     startCommand: "gunicorn run:app"
+    # Example using eventlet: "gunicorn --worker-class eventlet -w 1 run:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0 # Match your development environment
@@ -39,6 +40,9 @@ services:
       # --- FLASK_APP is required for flask db commands ---
       - key: FLASK_APP
         value: "run.py"
+      # --- Important: Set FLASK_ENV to production ---
+      - key: FLASK_ENV
+        value: "production"
       # --- Other secrets (MUST be set in Render Environment Group or directly) ---
       # These use sync: false because they are set manually in the Render dashboard
       - key: DATABASE_URL
@@ -82,7 +86,7 @@ services:
     # --- Install dependencies ---
     buildCommand: "pip install -r requirements.txt"
     # --- Start command runs Celery worker ---
-    startCommand: "celery -A tubealgo.celery worker --loglevel=info"
+    startCommand: "celery -A run.celery worker --loglevel=info" # Changed from tubealgo.celery to run.celery
     envVars:
       # --- Link to Redis ---
       - key: REDIS_URL
@@ -91,37 +95,23 @@ services:
           name: redis
           property: url
       # --- Sync other necessary environment variables from the web service ---
+      # It's generally better to set secrets directly in the worker or use env groups
+      # Syncing like this can sometimes cause issues if web service isn't ready
       - key: DATABASE_URL
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: DATABASE_URL
+        fromDatabase: # Link directly to DB like web service
+          name: tubealgo-database
+          property: connectionString
       - key: YOUTUBE_API_KEYS
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: YOUTUBE_API_KEYS
+        sync: false # Set directly in Render Env Vars for worker
       - key: GEMINI_API_KEY
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: GEMINI_API_KEY
+        sync: false # Set directly in Render Env Vars for worker
       - key: TELEGRAM_BOT_TOKEN
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: TELEGRAM_BOT_TOKEN
+        sync: false # Set directly in Render Env Vars for worker
       - key: ADMIN_TELEGRAM_CHAT_ID # Worker might need this too
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: ADMIN_TELEGRAM_CHAT_ID
+        sync: false # Set directly in Render Env Vars for worker
       # Add any other keys needed by Celery tasks (e.g., OpenAI key)
       # - key: OPENAI_API_KEY
-      #   fromService:
-      #     type: web
-      #     name: tubealgo
-      #     envVarKey: OPENAI_API_KEY
+      #   sync: false
 
   # 4. Celery Beat Service (Schedules periodic tasks)
   - type: worker
@@ -131,9 +121,10 @@ services:
     # --- Install dependencies ---
     buildCommand: "pip install -r requirements.txt"
     # --- Start command runs Celery beat ---
-    startCommand: "celery -A tubealgo.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler" # Example if using DB scheduler
-    # If not using DB scheduler, the simple command might work:
-    # startCommand: "celery -A tubealgo.celery beat --loglevel=info"
+    # Assuming you don't use the DB scheduler based on your jobs.py
+    startCommand: "celery -A run.celery beat --loglevel=info" # Changed from tubealgo.celery
+    # If using DB scheduler:
+    # startCommand: "celery -A run.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
     envVars:
       # --- Link to Redis ---
       - key: REDIS_URL
@@ -143,30 +134,17 @@ services:
           property: url
       # --- Sync necessary environment variables ---
       - key: DATABASE_URL
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: DATABASE_URL
+        fromDatabase: # Link directly to DB
+          name: tubealgo-database
+          property: connectionString
       - key: YOUTUBE_API_KEYS
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: YOUTUBE_API_KEYS
+        sync: false # Set directly in Render Env Vars for beat
       - key: GEMINI_API_KEY
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: GEMINI_API_KEY
+        sync: false # Set directly in Render Env Vars for beat
       - key: TELEGRAM_BOT_TOKEN
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: TELEGRAM_BOT_TOKEN
+        sync: false # Set directly in Render Env Vars for beat
       - key: ADMIN_TELEGRAM_CHAT_ID # Beat might need this too
-        fromService:
-          type: web
-          name: tubealgo
-          envVarKey: ADMIN_TELEGRAM_CHAT_ID
+        sync: false # Set directly in Render Env Vars for beat
 
 # --- Release Phase Command ---
 # This command runs *before* a new deployment goes live.
