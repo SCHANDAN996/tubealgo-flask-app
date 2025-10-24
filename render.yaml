@@ -2,41 +2,52 @@
 # Configuration for deploying the TubeAlgo application on Render.com
 
 services:
-  # 1. Redis Service (पहले जैसा ही)
+  # 1. Redis Service (for Celery broker and results)
   - name: redis
-    type: pserv
+    type: pserv # Private Service
     env: docker
     image:
-      url: redis:7
-    plan: free
-    disk:
+      url: redis:7 # Use official Redis 7 image
+    plan: free # Adjust plan as needed (e.g., standard-0)
+    disk: # Optional: Add disk persistence if needed beyond free tier limits
       name: redis-data
       mountPath: /data
       sizeGB: 1
 
   # 2. Web Service (Flask application served by Gunicorn)
   - type: web
-    name: tubealgo
+    name: tubealgo # Name of your web service
     env: python
-    plan: free
+    plan: free # Adjust plan as needed (e.g., standard-0)
+    # --- Build command executes build.sh ---
     buildCommand: "./build.sh"
-    startCommand: "gunicorn run:app" # आप --worker-class eventlet का उपयोग करने पर विचार कर सकते हैं
+    # --- Start command runs Gunicorn with Eventlet worker --- ### बदलाव यहाँ है ###
+    startCommand: "gunicorn --worker-class eventlet -w 1 run:app"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0 # अपना Python version डालें
+        value: 3.11.0 # Match your development environment
       - key: NODE_VERSION
-        value: 20.10.0 # अपना Node version डालें
+        value: 20.10.0 # Match your development environment
       - key: SECRET_KEY
-        generateValue: true
+        generateValue: true # Render generates a secure secret key
+      # --- Link to the Redis service ---
       - key: REDIS_URL
-        fromService: { type: pserv, name: redis, property: url }
-      - key: FLASK_APP # Flask CLI के लिए अभी भी आवश्यक हो सकता है
+        fromService:
+          type: pserv
+          name: redis # Ensure this matches Redis service name
+          property: url
+      # --- FLASK_APP is required for flask db commands (if used elsewhere) ---
+      - key: FLASK_APP
         value: "run.py"
+      # --- Set FLASK_ENV to production ---
       - key: FLASK_ENV
         value: "production"
-      # --- बाकी सीक्रेट्स (sync: false) पहले जैसे ही रहेंगे ---
+      # --- Other secrets (MUST be set in Render Environment Group or directly) ---
+      # These use sync: false because they are set manually in the Render dashboard
       - key: DATABASE_URL
-        fromDatabase: { name: tubealgo-database, property: connectionString }
+        fromDatabase:
+          name: tubealgo-database # Must match the database name below
+          property: connectionString
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -47,7 +58,7 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: ADMIN_TELEGRAM_CHAT_ID
+      - key: ADMIN_TELEGRAM_CHAT_ID # Ensure this is also set in Render env
         sync: false
       - key: MEASUREMENT_ID
         sync: false
@@ -55,22 +66,37 @@ services:
         sync: false
       - key: CASHFREE_SECRET_KEY
         sync: false
-      - key: CASHFREE_ENV
-        value: "PROD"
+      - key: CASHFREE_ENV # Set environment for Cashfree (PROD or SANDBOX)
+        value: "PROD" # Or "SANDBOX" for testing
+      # - key: OPENAI_API_KEY # Optional OpenAI key
+      #   sync: false
+      # - key: RAZORPAY_KEY_ID # Legacy Razorpay keys if needed
+      #   sync: false
+      # - key: RAZORPAY_KEY_SECRET # Legacy Razorpay keys if needed
+      #   sync: false
 
-  # 3. Celery Worker Service (पहले जैसा ही, startCommand बदला गया है)
+  # 3. Celery Worker Service (Runs background tasks)
   - type: worker
     name: celery-worker
     env: python
-    plan: free
+    plan: free # Adjust plan as needed
+    # --- Install dependencies ---
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A run:celery worker --loglevel=info" # run:celery का उपयोग करें
+    # --- Start command runs Celery worker (use run:celery) ---
+    startCommand: "celery -A run:celery worker --loglevel=info"
     envVars:
+      # --- Link to Redis ---
       - key: REDIS_URL
-        fromService: { type: pserv, name: redis, property: url }
+        fromService:
+          type: pserv
+          name: redis # Ensure this matches Redis service name
+          property: url
+      # --- Link to Database directly ---
       - key: DATABASE_URL
-        fromDatabase: { name: tubealgo-database, property: connectionString }
-      # --- सीक्रेट्स यहाँ भी सेट करें ---
+        fromDatabase:
+          name: tubealgo-database
+          property: connectionString
+      # --- Set secrets directly for worker or use Env Group ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GEMINI_API_KEY
@@ -79,22 +105,33 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_CHAT_ID
         sync: false
-      - key: FLASK_ENV
+      - key: FLASK_ENV # Worker might need this too
         value: "production"
+      # Add any other keys needed by Celery tasks
 
-  # 4. Celery Beat Service (पहले जैसा ही, startCommand बदला गया है)
+  # 4. Celery Beat Service (Schedules periodic tasks)
   - type: worker
     name: celery-beat
     env: python
-    plan: free
+    plan: free # Adjust plan as needed
+    # --- Install dependencies ---
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A run:celery beat --loglevel=info" # run:celery का उपयोग करें
+    # --- Start command runs Celery beat (use run:celery) ---
+    startCommand: "celery -A run:celery beat --loglevel=info"
+    # If using DB scheduler: "celery -A run:celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
     envVars:
+      # --- Link to Redis ---
       - key: REDIS_URL
-        fromService: { type: pserv, name: redis, property: url }
+        fromService:
+          type: pserv
+          name: redis # Ensure this matches Redis service name
+          property: url
+      # --- Link to Database directly ---
       - key: DATABASE_URL
-        fromDatabase: { name: tubealgo-database, property: connectionString }
-      # --- सीक्रेट्स यहाँ भी सेट करें ---
+        fromDatabase:
+          name: tubealgo-database
+          property: connectionString
+      # --- Set secrets directly for beat or use Env Group ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GEMINI_API_KEY
@@ -103,16 +140,18 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_CHAT_ID
         sync: false
-      - key: FLASK_ENV
+      - key: FLASK_ENV # Beat might need this too
         value: "production"
 
-# --- Release Phase Command (हटा दिया गया) ---
+# --- Release Phase Command (हटा दिया गया है क्योंकि db.create_all() इस्तेमाल हो रहा) ---
 # release:
 #   command: flask db upgrade
 
-# --- Database Configuration (पहले जैसा ही) ---
+# --- Database Configuration ---
+# Defines the PostgreSQL database managed by Render.
 databases:
-  - name: tubealgo-database
-    databaseName: tubealgodb
-    user: tubealgouser
-    plan: free
+  - name: tubealgo-database # Internal Render name for the database service
+    databaseName: tubealgodb # The actual name of the database inside PostgreSQL
+    user: tubealgouser # The username to connect to the database
+    plan: free # Adjust plan as needed (e.g., standard-0)
+    # region: oregon # Optional: Specify region if needed
