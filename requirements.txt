@@ -26,7 +26,7 @@ redis
 eventlet
 youtube-transcript-api
 pytrends
-Flask-Migrate
+# Flask-Migrate  # <<<--- यह लाइन हटाएं या कमेंट करें
 WeasyPrint
 numpy
 Flask-SSE
