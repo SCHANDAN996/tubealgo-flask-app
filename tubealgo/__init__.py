@@ -1,7 +1,7 @@
 # tubealgo/__init__.py
 
 import os
-from flask import Flask, url_for
+from flask import Flask, url_for, session, g # session and g might be needed by limiter or other extensions
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
 from flask_migrate import Migrate
@@ -11,10 +11,10 @@ from flask_limiter.util import get_remote_address
 from datetime import datetime, timezone, timedelta
 from celery import Celery, Task
 from celery.schedules import crontab
-import config
+import config # Assuming your config.py is at the root level alongside run.py
 from sqlalchemy.exc import OperationalError
 import pytz
-from flask_wtf.csrf import generate_csrf
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 # <<< Flask-SSE इम्पोर्ट करें >>>
 from flask_sse import sse
 
@@ -22,9 +22,20 @@ load_dotenv()
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-limiter = Limiter(key_func=get_remote_address)
-celery = Celery(__name__)
 migrate = Migrate()
+csrf = CSRFProtect() # Initialize CSRFProtect
+
+# Limiter configuration - use a function that can handle anonymous users
+def limiter_key_func():
+    # Use remote address for anonymous users, user ID for logged-in users
+    if current_user and current_user.is_authenticated:
+        return str(current_user.id)
+    return get_remote_address()
+
+limiter = Limiter(key_func=limiter_key_func)
+
+celery = Celery(__name__)
+
 
 def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
     """Jinja filter to convert a UTC datetime object to a user's preferred timezone."""
@@ -33,13 +44,13 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
 
     # Default to IST if user or timezone is not set
     user_tz_str = 'Asia/Kolkata'
-    if current_user.is_authenticated and current_user.timezone:
+    if current_user and current_user.is_authenticated and hasattr(current_user, 'timezone') and current_user.timezone:
         user_tz_str = current_user.timezone
 
     try:
         user_tz = pytz.timezone(user_tz_str)
     except pytz.UnknownTimeZoneError:
-        user_tz = pytz.timezone('Asia/Kolkata')
+        user_tz = pytz.timezone('Asia/Kolkata') # Fallback to IST
 
     # Make the naive datetime from DB timezone-aware (it's UTC)
     if isinstance(utc_dt, datetime) and utc_dt.tzinfo is None:
@@ -51,31 +62,42 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
     try:
         local_dt = utc_dt.astimezone(user_tz)
         return local_dt.strftime(fmt)
-    except Exception:
+    except Exception as e:
          # Fallback if conversion fails
+         print(f"Error localizing datetime: {e}") # Log error for debugging
          return utc_dt.strftime(fmt) + " UTC"
 
 
 def create_app():
+    # Correctly determine project root and paths
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     static_folder_path = os.path.join(project_root, 'static')
     template_folder_path = os.path.join(project_root, 'tubealgo', 'templates')
+    instance_folder_path = os.path.join(project_root, 'instance') # Define instance folder path
 
     app = Flask(
         __name__.split('.')[0],
+        instance_path=instance_folder_path, # Set instance path
         instance_relative_config=True,
         static_folder=static_folder_path,
         template_folder=template_folder_path
     )
 
     app.config.from_object(config.Config)
+    # Optional: Load instance config if it exists
+    # app.config.from_pyfile('config.py', silent=True)
+
+    # Ensure instance folder exists
+    try:
+        os.makedirs(app.instance_path, exist_ok=True)
+    except OSError:
+        pass # Handle potential errors if needed
 
     # <<< SSE Configuration >>>
-    # Ensure REDIS_URL is in the config (it should be from config.py)
     app.config["REDIS_URL"] = app.config.get("REDIS_URL", "redis://127.0.0.1:6379/0")
-    # Register the SSE blueprint
     app.register_blueprint(sse, url_prefix='/stream')
 
+    # Celery Configuration
     celery.conf.update(
         broker_url=app.config["CELERY_BROKER_URL"],
         result_backend=app.config["CELERY_RESULT_BACKEND"]
@@ -83,28 +105,25 @@ def create_app():
     celery.conf.beat_schedule = {
         'take-daily-snapshots-every-day': {
             'task': 'tubealgo.jobs.take_daily_snapshots',
-            'schedule': crontab(hour=0, minute=5), # Runs daily at 00:05 UTC
+            'schedule': crontab(hour=0, minute=5, day_of_week='*'), # Runs daily at 00:05 UTC
         },
         'check-for-new-videos-every-hour': {
             'task': 'tubealgo.jobs.check_for_new_videos',
-            'schedule': crontab(minute=0), # Runs every hour at minute 0
+            'schedule': crontab(minute=0, hour='*'), # Runs every hour at minute 0
         },
         'update-all-dashboards-every-4-hours': {
             'task': 'tubealgo.jobs.update_all_dashboards',
-            'schedule': crontab(minute=0, hour='*/4'), # Runs every 4 hours
+            'schedule': crontab(minute=15, hour='*/4'), # Runs every 4 hours at minute 15
         },
         'take-video-snapshots-every-3-hours': {
             'task': 'tubealgo.jobs.take_video_snapshots',
             'schedule': crontab(minute=30, hour='*/3'), # Runs every 3 hours at minute 30
         },
-        # --- बदलाव यहाँ: नया शेड्यूल जोड़ा गया ---
         'cleanup-old-snapshots-daily': {
             'task': 'tubealgo.jobs.cleanup_old_snapshots',
-            'schedule': crontab(hour=1, minute=0), # Runs daily at 01:00 UTC
+            'schedule': crontab(hour=1, minute=0, day_of_week='*'), # Runs daily at 01:00 UTC
         },
-        # --- बदलाव खत्म ---
     }
-
 
     class ContextTask(Task):
         def __call__(self, *args, **kwargs):
@@ -114,18 +133,22 @@ def create_app():
 
     app.celery = celery
 
+    # Initialize extensions
     db.init_app(app)
-    migrate.init_app(app, db)
-
+    migrate.init_app(app, db) # Initialize Flask-Migrate
+    csrf.init_app(app) # Initialize CSRFProtect
     login_manager.init_app(app)
-    # --- यह 'auth.login' से 'auth_local.login' में बदला गया (Project 47 के अनुसार) ---
     login_manager.login_view = 'auth_local.login'
     login_manager.login_message_category = "error"
 
     limiter.init_app(app)
-    # Use Redis for limiter storage if REDIS_URL is set
+    # Use Redis for limiter storage if REDIS_URL is set (from config)
     limiter_storage_uri = app.config.get("REDIS_URL", "memory://")
+    # Limiter needs storage_uri, not storage_url
     limiter.storage_uri = limiter_storage_uri
+    # Default limits (example: 100 per day, 20 per hour for all routes)
+    # You can apply specific limits using decorators in routes
+    # app.config['RATELIMIT_DEFAULT'] = "100/day;20/hour"
 
 
     # Register custom Jinja filters
@@ -133,14 +156,13 @@ def create_app():
     app.jinja_env.filters['localize'] = localize_datetime
 
 
-    # Blueprints
-    # --- auth.py को auth_local.py और auth_google.py से बदला गया ---
+    # --- Import and register blueprints ---
+    # Import Blueprints here to avoid circular imports
     from .auth_local import auth_local_bp
     app.register_blueprint(auth_local_bp, url_prefix='/')
 
     from .auth_google import auth_google_bp
     app.register_blueprint(auth_google_bp, url_prefix='/')
-    # ---
 
     from .routes.core_routes import core_bp
     app.register_blueprint(core_bp, url_prefix='/')
@@ -151,69 +173,45 @@ def create_app():
     from .routes.analysis_routes import analysis_bp
     app.register_blueprint(analysis_bp, url_prefix='/')
     from .routes.api_routes import api_bp
-    app.register_blueprint(api_bp)
+    app.register_blueprint(api_bp) # Assumes url_prefix='/api' is defined within api_bp
     from .routes.ai_api_routes import ai_api_bp
-    app.register_blueprint(ai_api_bp) # (यह प्रोजेक्ट 43 में /manage/api पर था, अब यह / पर है)
+    app.register_blueprint(ai_api_bp) # Assumes url_prefix='/manage/api' is defined within ai_api_bp
     from .routes.tool_routes import tool_bp
     app.register_blueprint(tool_bp, url_prefix='/')
     from .routes.settings_routes import settings_bp
     app.register_blueprint(settings_bp, url_prefix='/')
-
-    # --- यह लाइन जोड़ी गई है ---
     from .routes.payment_routes import payment_bp
-    app.register_blueprint(payment_bp, url_prefix='/payment') # '/payment' prefix का उपयोग
-
-    # --- admin_routes.py को admin blueprint से बदला गया ---
-    from .routes.admin import admin_bp
+    app.register_blueprint(payment_bp, url_prefix='/payment')
+    from .routes.admin import admin_bp # Import the main admin blueprint
     app.register_blueprint(admin_bp, url_prefix='/admin')
-
-    # --- manager_routes.py को video_manager_routes.py से बदला गया ---
     from .routes.video_manager_routes import video_manager_bp
     app.register_blueprint(video_manager_bp, url_prefix='/manage')
-
     from .routes.playlist_manager_routes import playlist_manager_bp
     app.register_blueprint(playlist_manager_bp, url_prefix='/manage')
-
-    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
     from .routes.ab_test_routes import ab_test_bp
     app.register_blueprint(ab_test_bp, url_prefix='/manage')
-
-    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
-    # from .routes.comment_routes import comment_bp
-    # app.register_blueprint(comment_bp)
-
-    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
     from .routes.report_routes import report_bp
-    app.register_blueprint(report_bp)
-
-    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    app.register_blueprint(report_bp) # Assumes url_prefix='/report' is defined within report_bp
     from .routes.video_analytics_routes import video_analytics_bp
-    app.register_blueprint(video_analytics_bp)
-
+    app.register_blueprint(video_analytics_bp) # Assumes url_prefix is defined within video_analytics_bp or handles root
     from .routes.planner_routes import planner_bp
-    app.register_blueprint(planner_bp)
+    app.register_blueprint(planner_bp) # Assumes url_prefix is defined within planner_bp or handles root
     from .routes.goal_routes import goal_bp
-    app.register_blueprint(goal_bp)
-
-    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    app.register_blueprint(goal_bp) # Assumes url_prefix='/api/goals' is defined within goal_bp
     from .routes.user_routes import user_bp
-    app.register_blueprint(user_bp)
+    app.register_blueprint(user_bp) # Assumes url_prefix is defined within user_bp or handles root
 
-
-    from . import models # Import models after db is initialized
-    from .services.ai_service import initialize_ai_clients
+    # --- Import models after db init and blueprints ---
+    from . import models # Ensure models are imported so Flask-Login user_loader works
+    from .services.ai_service import initialize_ai_clients # AI client initialization
 
     @app.after_request
     def add_security_headers(response):
         # Basic security headers
         response.headers['X-Content-Type-Options'] = 'nosniff'
-        # Allow framing only by self to prevent clickjacking
         response.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
-        # Remove potentially conflicting headers if set by other middleware
         response.headers.pop('X-Frame-Options', None)
-        # X-XSS-Protection is deprecated, CSP is preferred
         response.headers.pop('X-XSS-Protection', None)
-        # Don't suggest caching sensitive pages
         if response.mimetype == 'text/html':
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
@@ -230,13 +228,17 @@ def create_app():
                     file_path = os.path.join(app.static_folder, filename)
                     if os.path.exists(file_path):
                         values['v'] = int(os.stat(file_path).st_mtime)
+            # Handle external URLs correctly
+            if '_external' in values:
+                return url_for(endpoint, **values)
             return url_for(endpoint, **values)
         return dict(url_for=dated_url_for)
+
 
     @app.context_processor
     def inject_now_and_settings():
         # Make datetime and get_setting available in all templates
-        from .models import get_setting
+        from .models import get_setting # Import locally to avoid potential circular dependency during init
         return {'now': datetime.utcnow, 'get_setting': get_setting}
 
     @app.context_processor
@@ -246,9 +248,18 @@ def create_app():
 
     with app.app_context():
         # Run functions requiring app context on startup
-        seed_plans()
-        print("Initializing AI clients within app context...")
-        initialize_ai_clients()
+        try:
+            # Attempt to create tables if they don't exist (useful for first run/dev)
+            # db.create_all() # Generally avoid in prod with migrations, but can be ok for setup
+            # Seed plans only if the table exists and is empty
+            seed_plans()
+            print("Initializing AI clients within app context...")
+            initialize_ai_clients()
+        except OperationalError as e:
+            print(f"Database operation failed during init (maybe migrating?): {e}")
+        except Exception as e:
+            print(f"Error during app context initialization: {e}")
+
 
     return app
 
@@ -256,9 +267,10 @@ def format_relative_time(dt_input):
     """Jinja filter to format datetime object or string into relative time."""
     if not dt_input: return ""
 
+    dt_obj = None
     if isinstance(dt_input, str):
         try:
-            # Handle ISO format strings (with or without Z)
+            # Handle ISO format strings (with or without Z/offset)
             dt_obj = datetime.fromisoformat(dt_input.replace('Z', '+00:00'))
         except ValueError:
             return dt_input # Return original string if parsing fails
@@ -266,6 +278,8 @@ def format_relative_time(dt_input):
         dt_obj = dt_input
     else:
         return str(dt_input) # Return string representation for other types
+
+    if not dt_obj: return str(dt_input) # Fallback
 
     # Ensure dt_obj is timezone-aware (assume UTC if naive)
     if dt_obj.tzinfo is None:
@@ -293,8 +307,8 @@ def format_relative_time(dt_input):
 
 def seed_plans():
     """Seeds the database with default subscription plans if none exist."""
-    from .models import SubscriptionPlan
-    from sqlalchemy import inspect
+    from .models import SubscriptionPlan # Import locally
+    from sqlalchemy import inspect # Import locally
 
     try:
         inspector = inspect(db.engine)
