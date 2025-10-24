@@ -20,16 +20,14 @@ services:
     env: python
     plan: free
     buildCommand: "./build.sh"
-    startCommand: "gunicorn run:app" # <<<--- सरल कमांड
+    # --- Gunicorn को कॉन्फ़िग फ़ाइल का उपयोग करने के लिए कहें --- #
+    startCommand: "gunicorn -c gunicorn.conf.py run:app" # <<<--- बदलाव यहाँ है
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: NODE_VERSION
         value: 20.10.0
-      # --- Gunicorn वर्कर क्लास यहाँ सेट करें --- #
-      - key: GUNICORN_CMD_ARGS # <<<--- नया एनवायरनमेंट वेरिएबल
-        value: "--workers=1 --worker-class=gevent" # <<<--- gevent वर्कर यहाँ निर्दिष्ट
-      # --- बाकी envVars --- #
+      # --- GUNICORN_CMD_ARGS हटा दिया गया है --- #
       - key: SECRET_KEY
         generateValue: true
       - key: REDIS_URL
