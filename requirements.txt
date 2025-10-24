@@ -29,3 +29,4 @@ pytrends
 Flask-Migrate
 WeasyPrint
 numpy
+Flask-SSE
