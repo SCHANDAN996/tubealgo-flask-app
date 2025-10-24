@@ -1,36 +1,52 @@
+# render.yaml
+# Configuration for deploying the TubeAlgo application on Render.com
+
 services:
-  # 1. Redis Service
-  # यह Celery के लिए मैसेज ब्रोकर का काम करेगा।
+  # 1. Redis Service (for Celery broker and results)
   - name: redis
-    type: pserv
+    type: pserv # Private Service
     env: docker
     image:
-      url: redis:7
-    plan: free # आप अपनी जरूरत के हिसाब से प्लान बदल सकते हैं
+      url: redis:7 # Use official Redis 7 image
+    plan: free # Adjust plan as needed (e.g., standard-0)
+    disk: # Optional: Add disk persistence if needed beyond free tier limits
+      name: redis-data
+      mountPath: /data
+      sizeGB: 1
 
-  # 2. Web Service (आपका Flask ऐप)
-  # इसमें कोई बड़ा बदलाव नहीं है, बस redis service का लिंक जोड़ा गया है।
+  # 2. Web Service (Flask application served by Gunicorn)
   - type: web
-    name: tubealgo
+    name: tubealgo # Name of your web service
     env: python
-    plan: free
+    plan: free # Adjust plan as needed (e.g., standard-0)
+    # --- Build command executes build.sh ---
     buildCommand: "./build.sh"
+    # --- Start command runs Gunicorn ---
     startCommand: "gunicorn run:app"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.0 # Match your development environment
       - key: NODE_VERSION
-        value: 20.10.0
+        value: 20.10.0 # Match your development environment
       - key: SECRET_KEY
-        generateValue: true
-      - key: REDIS_URL # <-- यह नई लाइन है
+        generateValue: true # Render generates a secure secret key
+      # --- Link to the Redis service ---
+      - key: REDIS_URL
         fromService:
           type: pserv
           name: redis
           property: url
-      # बाकी की keys आपके Render डैशबोर्ड के "Environment" सेक्शन में होनी चाहिए
+      # --- FLASK_APP is required for flask db commands ---
+      - key: FLASK_APP
+        value: "run.py"
+      # --- Other secrets (MUST be set in Render Environment Group or directly) ---
+      # These use sync: false because they are set manually in the Render dashboard
       - key: DATABASE_URL
-        sync: false
+        # This will be automatically provided by the linked Render database
+        # If using external DB, set sync: false and add value in Render dashboard
+        fromDatabase:
+          name: tubealgo-database # Must match the database name below
+          property: connectionString
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -41,30 +57,40 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+      - key: ADMIN_TELEGRAM_CHAT_ID # Ensure this is also set in Render env
+        sync: false
       - key: MEASUREMENT_ID
         sync: false
       - key: CASHFREE_APP_ID
         sync: false
       - key: CASHFREE_SECRET_KEY
         sync: false
-      - key: CASHFREE_ENV
-        value: "PROD"
+      - key: CASHFREE_ENV # Set environment for Cashfree (PROD or SANDBOX)
+        value: "PROD" # Or "SANDBOX" for testing
+      # - key: OPENAI_API_KEY # Optional OpenAI key
+      #   sync: false
+      # - key: RAZORPAY_KEY_ID # Legacy Razorpay keys if needed
+      #   sync: false
+      # - key: RAZORPAY_KEY_SECRET # Legacy Razorpay keys if needed
+      #   sync: false
 
-  # 3. Celery Worker Service
-  # यह बैकग्राउंड में आपके tasks (जैसे डैशबोर्ड अपडेट) को चलाएगा।
+  # 3. Celery Worker Service (Runs background tasks)
   - type: worker
     name: celery-worker
     env: python
-    plan: free
+    plan: free # Adjust plan as needed
+    # --- Install dependencies ---
     buildCommand: "pip install -r requirements.txt"
+    # --- Start command runs Celery worker ---
     startCommand: "celery -A tubealgo.celery worker --loglevel=info"
     envVars:
+      # --- Link to Redis ---
       - key: REDIS_URL
         fromService:
           type: pserv
           name: redis
           property: url
-      # बाकी की keys को भी यहाँ sync करना होगा
+      # --- Sync other necessary environment variables from the web service ---
       - key: DATABASE_URL
         fromService:
           type: web
@@ -85,22 +111,37 @@ services:
           type: web
           name: tubealgo
           envVarKey: TELEGRAM_BOT_TOKEN
+      - key: ADMIN_TELEGRAM_CHAT_ID # Worker might need this too
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: ADMIN_TELEGRAM_CHAT_ID
+      # Add any other keys needed by Celery tasks (e.g., OpenAI key)
+      # - key: OPENAI_API_KEY
+      #   fromService:
+      #     type: web
+      #     name: tubealgo
+      #     envVarKey: OPENAI_API_KEY
 
-  # 4. Celery Beat Service
-  # यह शेड्यूलर है जो बताएगा कि कौन सा task कब चलाना है।
+  # 4. Celery Beat Service (Schedules periodic tasks)
   - type: worker
     name: celery-beat
     env: python
-    plan: free
+    plan: free # Adjust plan as needed
+    # --- Install dependencies ---
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A tubealgo.celery beat --loglevel=info"
+    # --- Start command runs Celery beat ---
+    startCommand: "celery -A tubealgo.celery beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler" # Example if using DB scheduler
+    # If not using DB scheduler, the simple command might work:
+    # startCommand: "celery -A tubealgo.celery beat --loglevel=info"
     envVars:
+      # --- Link to Redis ---
       - key: REDIS_URL
         fromService:
           type: pserv
           name: redis
           property: url
-      # Beat को भी सभी keys की जरूरत पड़ेगी
+      # --- Sync necessary environment variables ---
       - key: DATABASE_URL
         fromService:
           type: web
@@ -121,9 +162,23 @@ services:
           type: web
           name: tubealgo
           envVarKey: TELEGRAM_BOT_TOKEN
+      - key: ADMIN_TELEGRAM_CHAT_ID # Beat might need this too
+        fromService:
+          type: web
+          name: tubealgo
+          envVarKey: ADMIN_TELEGRAM_CHAT_ID
 
-# यह सुनिश्चित करने के लिए कि आपका डेटाबेस मौजूद है, इस सेक्शन को YAML में रखें।
+# --- Release Phase Command ---
+# This command runs *before* a new deployment goes live.
+# Used here to apply database migrations automatically.
+release:
+  command: flask db upgrade
+
+# --- Database Configuration ---
+# Defines the PostgreSQL database managed by Render.
 databases:
-  - name: tubealgo-database # यह नाम आपके डेटाबेस के नाम से मेल खाना चाहिए
-    databaseName: tubealgodb 
-    user: tubealgouser
+  - name: tubealgo-database # Internal Render name for the database service
+    databaseName: tubealgodb # The actual name of the database inside PostgreSQL
+    user: tubealgouser # The username to connect to the database
+    plan: free # Adjust plan as needed (e.g., standard-0)
+    # region: oregon # Optional: Specify region if needed
