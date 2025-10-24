@@ -6,6 +6,7 @@ from flask_wtf import FlaskForm
 from tubealgo import db
 from tubealgo.models import User, log_system_event
 from tubealgo.services.notification_service import send_telegram_message
+import pytz
 
 settings_bp = Blueprint('settings', __name__)
 
@@ -55,12 +56,10 @@ def test_telegram():
 def settings():
     form = FlaskForm()
     if form.validate_on_submit():
-        # Check which button was pressed via its 'name' and 'value' attributes
         action = request.form.get('action')
         
         if action == 'update_phone':
             phone = request.form.get('phone_number', '').strip()
-            # Basic validation for a 10-digit number
             if phone.isdigit() and len(phone) >= 10:
                 current_user.phone_number = phone
                 db.session.commit()
@@ -74,10 +73,21 @@ def settings():
             current_user.default_contact_info = request.form.get('contact_info')
             db.session.commit()
             flash('Your default information has been saved!', 'success')
+            
+        elif action == 'update_timezone':
+            selected_timezone = request.form.get('timezone')
+            if selected_timezone in pytz.all_timezones:
+                current_user.timezone = selected_timezone
+                db.session.commit()
+                flash('Your timezone has been updated!', 'success')
+            else:
+                flash('Invalid timezone selected.', 'error')
         
         return redirect(url_for('settings.settings'))
 
-    return render_template('settings.html', form=form, active_page='settings')
+    all_timezones = pytz.all_timezones
+    
+    return render_template('settings.html', form=form, all_timezones=all_timezones, active_page='settings')
 
 
 @settings_bp.route('/settings/telegram', methods=['GET', 'POST'])

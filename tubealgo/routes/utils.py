@@ -2,8 +2,8 @@
 
 import re
 from datetime import datetime
-from tubealgo.services.youtube_fetcher import get_full_video_details, get_most_used_tags as fetcher_get_most_used_tags
-# REMOVED: The import for analyze_comment_sentiment has been removed for compliance.
+from tubealgo.services.video_fetcher import get_full_video_details
+from tubealgo.services.channel_fetcher import get_most_used_tags as fetcher_get_most_used_tags
 from flask_login import current_user
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -16,20 +16,25 @@ ALL_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile', 
     'openid',
     'https://www.googleapis.com/auth/youtube', 
-    'https://www.googleapis.com/auth/youtube.upload'
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/yt-analytics.readonly'
 ]
 
-def get_credentials():
+# --- यहाँ बदलाव किया गया है ---
+def get_credentials(user=None):
     """
-    Gets valid Google credentials for the current user.
+    Gets valid Google credentials for a given user or the current user.
     Handles token refresh automatically using the database.
     """
-    if not current_user.is_authenticated or not current_user.google_refresh_token:
+    # यदि कोई यूज़र पास नहीं किया गया है, तो current_user का उपयोग करें
+    target_user = user or current_user
+
+    if not target_user or not target_user.is_authenticated or not target_user.google_refresh_token:
         return None
 
     creds = Credentials.from_authorized_user_info({
-        "token": current_user.google_access_token,
-        "refresh_token": current_user.google_refresh_token,
+        "token": target_user.google_access_token,
+        "refresh_token": target_user.google_refresh_token,
         "token_uri": "https://oauth2.googleapis.com/token",
         "client_id": get_config_value("GOOGLE_CLIENT_ID"),
         "client_secret": get_config_value("GOOGLE_CLIENT_SECRET"),
@@ -39,10 +44,17 @@ def get_credentials():
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            current_user.google_access_token = creds.token
-            current_user.google_token_expiry = creds.expiry
+            target_user.google_access_token = creds.token
+            target_user.google_token_expiry = creds.expiry
             db.session.commit()
         except Exception as e:
+            # अगर टोकन रिफ्रेश फेल होता है, तो लॉग करें और None लौटाएं
+            from tubealgo.models import log_system_event
+            log_system_event(
+                message=f"Google token refresh failed for user {target_user.id}",
+                log_type='ERROR',
+                details={'error': str(e)}
+            )
             return None
     
     return creds
@@ -70,10 +82,7 @@ def get_video_info_dict(video_id):
     upload_date = datetime.fromisoformat(snippet['publishedAt'].replace('Z', ''))
     days_since_upload = (datetime.utcnow() - upload_date).days
     view_count = int(stats.get('viewCount', 0))
-    views_per_day = view_count / days_since_upload if days_since_upload > 0 else view_count
     _, duration_formatted = parse_duration(content.get('duration'))
-    
-    # REMOVED: The sentiment analysis call has been removed for compliance.
     
     hashtags = re.findall(r"#(\w+)", description)
     return {
@@ -82,8 +91,7 @@ def get_video_info_dict(video_id):
         'hashtags': hashtags, 'thumbnail_url': snippet.get('thumbnails', {}).get('maxres', snippet.get('thumbnails', {}).get('high', {})).get('url'),
         'upload_date_str': upload_date.strftime('%B %d, %Y'), 'duration_str': duration_formatted,
         'views': view_count, 'likes': int(stats.get('likeCount', 0)), 'comments': int(stats.get('commentCount', 0)),
-        'days_since_upload': days_since_upload, 'views_per_day': round(views_per_day)
-        # REMOVED: 'sentiment' key was removed from this dictionary.
+        'days_since_upload': days_since_upload
     }
 
 def sanitize_filename(name):

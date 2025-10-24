@@ -22,4 +22,9 @@ class PlanForm(FlaskForm):
     has_discover_tools = BooleanField('Discover Tools Access')
     has_ai_suggestions = BooleanField('AI Video Suggestions Access')
     is_popular = BooleanField('Mark as Most Popular')
+    
+    # === बदलाव यहाँ है: नया फील्ड जोड़ा गया ===
+    has_comment_reply = BooleanField('Enable Comment Reply & AI Suggestions')
+    # === बदलाव यहाँ खत्म है ===
+
     submit = SubmitField('Update Plan')

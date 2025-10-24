@@ -1,12 +1,12 @@
-# Filepath: tubealgo/telegram_bot_handler.py
+# tubealgo/telegram_bot_handler.py
 
 import requests
-from .models import is_admin_telegram_user, User, SystemLog, db
+import traceback
+from .models import is_admin_telegram_user, User, SystemLog, db, log_system_event
 from .services.notification_service import send_telegram_message
 
 last_update_id = 0
 
-# === यहाँ एक नया हेल्पर फंक्शन जोड़ा गया है ===
 def answer_callback_query(callback_query_id):
     """बटन क्लिक के बाद लोडिंग आइकॉन को हटाने के लिए टेलीग्राम को जवाब देता है।"""
     from .models import get_config_value
@@ -18,13 +18,14 @@ def answer_callback_query(callback_query_id):
     try:
         requests.post(url, data=payload)
     except Exception as e:
-        print(f"Error answering callback query: {e}")
-# === यहाँ तक ===
-
+        log_system_event(
+            message="Error answering Telegram callback query",
+            log_type='ERROR',
+            details={'error': str(e), 'traceback': traceback.format_exc()}
+        )
 
 def handle_stats(chat_id):
     """/stats कमांड को हैंडल करता है।"""
-    # ... (इस फंक्शन में कोई बदलाव नहीं)
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, "❌ You are not authorized to use this command.")
         return
@@ -40,10 +41,8 @@ def handle_stats(chat_id):
     except Exception as e:
         send_telegram_message(chat_id, f"An error occurred while fetching stats: {e}")
 
-
 def handle_users(chat_id):
     """/users कमांड को हैंडल करता है।"""
-    # ... (इस फंक्शन में कोई बदलाव नहीं)
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, "❌ You are not authorized to use this command.")
         return
@@ -63,10 +62,8 @@ def handle_users(chat_id):
     except Exception as e:
         send_telegram_message(chat_id, f"An error occurred while fetching users: {e}")
 
-
 def handle_get_logs(chat_id):
     """/get_logs कमांड को हैंडल करता है।"""
-    # ... (इस फंक्शन में कोई बदलाव नहीं)
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, "❌ You are not authorized to use this command.")
         return
@@ -87,10 +84,8 @@ def handle_get_logs(chat_id):
     except Exception as e:
         send_telegram_message(chat_id, f"An error occurred while fetching logs: {e}")
 
-
 def handle_find_user(chat_id, text):
     """/find_user <email> कमांड को हैंडल करता है।"""
-    # ... (इस फंक्शन में कोई बदलाव नहीं)
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, "❌ You are not authorized to use this command.")
         return
@@ -122,10 +117,8 @@ def handle_find_user(chat_id, text):
     except Exception as e:
         send_telegram_message(chat_id, f"An error occurred while finding user: {e}")
 
-
 def handle_suspend_user(chat_id, text):
     """/suspend_user <email> कमांड को हैंडल करता है।"""
-    # ... (इस फंक्शन में कोई बदलाव नहीं)
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, "❌ You are not authorized to use this command.")
         return
@@ -151,10 +144,8 @@ def handle_suspend_user(chat_id, text):
         db.session.rollback()
         send_telegram_message(chat_id, f"Error updating user status: {e}")
 
-
 def handle_upgrade_plan(chat_id, text):
     """/upgrade_plan <email> <plan> कमांड को हैंडल करता है।"""
-    # ... (इस फंक्शन में कोई बदलाव नहीं)
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, "❌ You are not authorized to use this command.")
         return
@@ -180,7 +171,6 @@ def handle_upgrade_plan(chat_id, text):
         db.session.rollback()
         send_telegram_message(chat_id, f"Error upgrading plan: {e}")
 
-
 def handle_start_or_help(chat_id):
     """/start और /help कमांड को हैंडल करता है। अब यह टेक्स्ट की जगह बटन भेजेगा।"""
     message = (
@@ -188,29 +178,24 @@ def handle_start_or_help(chat_id):
         "This bot sends you notifications about your competitors."
     )
     
-    # आम यूज़र के लिए सिर्फ मैसेज भेजें
     if not is_admin_telegram_user(chat_id):
         send_telegram_message(chat_id, message)
         return
 
-    # एडमिन के लिए मैसेज के साथ बटन भी भेजें
     admin_message = message + "\n\n👑 *Admin Menu:*"
     
-    # बटन का स्ट्रक्चर बनाएँ
     keyboard = [
-        [ # पहली पंक्ति
+        [
             {'text': '📊 Stats', 'callback_data': 'stats'},
             {'text': '👥 Recent Users', 'callback_data': 'users'}
         ],
-        [ # दूसरी पंक्ति
+        [
             {'text': '📋 Get Logs', 'callback_data': 'get_logs'}
         ]
-        # आप यहाँ और बटन जोड़ सकते हैं
     ]
     reply_markup = {'inline_keyboard': keyboard}
     
     send_telegram_message(chat_id, admin_message, reply_markup=reply_markup)
-
 
 def process_updates(app):
     """टेलीग्राम से नए मैसेज और बटन क्लिक को प्रोसेस करता है।"""
@@ -232,30 +217,25 @@ def process_updates(app):
             for update in updates:
                 last_update_id = update['update_id']
                 
-                # === यहाँ से नया कोड जोड़ा गया है (बटन क्लिक हैंडल करने के लिए) ===
                 if 'callback_query' in update:
                     callback_id = update['callback_query']['id']
                     chat_id = update['callback_query']['message']['chat']['id']
                     data = update['callback_query']['data']
                     
-                    # बटन क्लिक का जवाब दें ताकि लोडिंग बंद हो
                     answer_callback_query(callback_id)
 
-                    # डेटा के आधार पर सही फंक्शन को कॉल करें
                     if data == 'stats':
                         handle_stats(chat_id)
                     elif data == 'users':
                         handle_users(chat_id)
                     elif data == 'get_logs':
                         handle_get_logs(chat_id)
-                    continue # अगले अपडेट पर जाएँ
-                # === यहाँ तक ===
+                    continue
 
                 if 'message' in update and 'text' in update['message']:
                     chat_id = update['message']['chat']['id']
                     text = update['message']['text']
 
-                    # टेक्स्ट कमांड्स को यहाँ हैंडल करें
                     if text.startswith('/stats'):
                         handle_stats(chat_id)
                     elif text.startswith('/users'):
@@ -272,6 +252,14 @@ def process_updates(app):
                         handle_start_or_help(chat_id)
 
         except requests.exceptions.RequestException as e:
-            print(f"Could not connect to Telegram API: {e}")
+            log_system_event(
+                message="Could not connect to Telegram API",
+                log_type='ERROR',
+                details={'error': str(e)}
+            )
         except Exception as e:
-            print(f"Error processing Telegram updates: {e}")
+            log_system_event(
+                message="Error processing Telegram updates",
+                log_type='ERROR',
+                details={'error': str(e), 'traceback': traceback.format_exc()}
+            )

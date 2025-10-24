@@ -4,16 +4,21 @@ from flask import render_template, request, redirect, url_for, flash, Blueprint,
 from flask_login import login_required, current_user
 from flask_wtf import FlaskForm
 from tubealgo import db
-from tubealgo.models import Competitor, SubscriptionPlan, User
-from tubealgo.services.youtube_fetcher import (
-    analyze_channel, get_youtube_categories, get_top_channels_by_category, 
+from tubealgo.models import Competitor, SubscriptionPlan, User, ContentIdea
+from tubealgo.services.channel_fetcher import analyze_channel
+from tubealgo.services.discovery_fetcher import (
+    get_youtube_categories, get_top_channels_by_category, 
     find_similar_channels
 )
 from tubealgo.services.notification_service import send_telegram_photo_with_caption
+from tubealgo.services.ai_service import generate_idea_from_competitor, analyze_transcript_with_ai
 from tubealgo.routes.api_routes import get_full_competitor_package
-from tubealgo.routes.utils import get_video_info_dict 
+from tubealgo.routes.utils import get_video_info_dict
+from tubealgo.decorators import check_limits, RateLimitExceeded
 import json
 from tubealgo.jobs import perform_full_analysis
+from youtube_transcript_api import YouTubeTranscriptApi
+
 
 competitor_bp = Blueprint('competitor', __name__)
 
@@ -22,8 +27,12 @@ competitor_bp = Blueprint('competitor', __name__)
 def competitors():
     user_competitors_query = current_user.competitors.order_by(Competitor.position.asc()).all()
     competitors_list = [{"id": comp.id, "channel_id_youtube": comp.channel_id_youtube, "channel_title": comp.channel_title} for comp in user_competitors_query]
+    
+    # Pass the form object to the template for CSRF token
     form = FlaskForm() 
+    
     plan = SubscriptionPlan.query.filter_by(plan_id=current_user.subscription_plan).first() or SubscriptionPlan.query.filter_by(plan_id='free').first()
+    
     return render_template('competitors.html', 
                            competitors=user_competitors_query,
                            competitors_json=json.dumps(competitors_list),
@@ -34,10 +43,6 @@ def competitors():
 @competitor_bp.route('/competitors/add', methods=['POST'])
 @login_required
 def add_competitor():
-    """
-    Handles adding a new competitor via an AJAX request.
-    Returns JSON instead of redirecting the page.
-    """
     try:
         plan = SubscriptionPlan.query.filter_by(plan_id=current_user.subscription_plan).first() or SubscriptionPlan.query.filter_by(plan_id='free').first()
         limit = plan.competitors_limit if plan else 0
@@ -51,13 +56,10 @@ def add_competitor():
         channel_id_from_selection = data.get('channel_id_hidden')
         channel_query_from_input = data.get('channel_url')
         
-        search_input = None # Start with nothing
+        search_input = None
 
-        # --- NEW, MORE EXPLICIT LOGIC ---
-        # 1. Prioritize the exact Channel ID if it was sent from the frontend selection.
         if channel_id_from_selection and channel_id_from_selection.strip().startswith('UC'):
             search_input = channel_id_from_selection.strip()
-        # 2. If no ID, use the text from the input field.
         elif channel_query_from_input and channel_query_from_input.strip():
             search_input = channel_query_from_input.strip()
 
@@ -73,11 +75,10 @@ def add_competitor():
         if existing:
             return jsonify({'success': False, 'error': f"'{analysis_data['Title']}' is already in your list."}), 409
 
-        # Move all existing competitors down by one position
+        
         Competitor.query.filter_by(user_id=current_user.id).update({Competitor.position: Competitor.position + 1})
         db.session.flush()
 
-        # Add the new competitor at the top (position 1)
         new_competitor = Competitor(
             user_id=current_user.id, 
             channel_id_youtube=analysis_data['id'], 
@@ -88,10 +89,8 @@ def add_competitor():
         db.session.add(new_competitor)
         db.session.commit()
 
-        # Start the full data analysis in a background task
         perform_full_analysis.delay(new_competitor.id)
 
-        # Return the new competitor's data to the frontend
         return jsonify({
             'success': True,
             'competitor': {
@@ -112,7 +111,7 @@ def delete_competitor(competitor_id):
         return redirect(url_for('competitor.competitors'))
     
     from tubealgo.models import ApiCache
-    cache_key = f"competitor_package_v5:{competitor_id}" 
+    cache_key = f"competitor_package_v6:{competitor_id}" 
     ApiCache.query.filter_by(cache_key=cache_key).delete()
     
     deleted_position = comp.position
@@ -184,15 +183,80 @@ def send_video_to_telegram(video_id):
         flash(video_info['error'], 'error')
         return redirect(url_for('analysis.video_analysis', video_id=video_id))
     
-    # MODIFIED: Removed the "Sentiment" line to comply with YouTube ToS
     caption = (
         f"📊 *Video Analysis for:* {video_info['title']}\n\n"
         f"👀 Views: *{video_info['views']:,}*\n"
         f"👍 Likes: *{video_info['likes']:,}*\n"
-        f"💬 Comments: *{video_info['comments']:,}*\n"
-        f"📈 Views/Day: *{video_info['views_per_day']:,}*\n\n"
+        f"💬 Comments: *{video_info['comments']:,}*\n\n"
         f"[Watch on YouTube](https://youtu.be/{video_info['id']})"
     )
     send_telegram_photo_with_caption(current_user.telegram_chat_id, video_info['thumbnail_url'], caption)
     flash('Analysis has been sent to your Telegram!', 'success')
     return redirect(url_for('analysis.video_analysis', video_id=video_id))
+
+@competitor_bp.route('/api/competitor/add-idea-from-video', methods=['POST'])
+@login_required
+def add_idea_from_competitor_video():
+    try:
+        @check_limits(feature='ai_generation')
+        def do_generation():
+            data = request.json
+            title = data.get('title')
+            if not title:
+                return jsonify({'error': 'Video title is required'}), 400
+
+            ai_result = generate_idea_from_competitor(title)
+            if 'error' in ai_result or 'new_title' not in ai_result:
+                return jsonify({'error': 'AI could not generate an idea.'}), 500
+            
+            new_title = ai_result['new_title']
+
+            max_position = db.session.query(db.func.max(ContentIdea.position)).filter_by(user_id=current_user.id, status='idea').scalar() or -1
+            
+            new_idea = ContentIdea(
+                user_id=current_user.id,
+                title=new_title,
+                display_title=new_title,
+                status='idea',
+                position=max_position + 1
+            )
+            db.session.add(new_idea)
+            db.session.commit()
+            
+            return jsonify({'success': True, 'message': f"Idea '{new_title}' added to your planner!"})
+
+        return do_generation()
+    except RateLimitExceeded as e:
+        return jsonify({'error': str(e)}), 429
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'An unexpected error occurred.'}), 500
+
+@competitor_bp.route('/api/competitor/analyze-transcript/<string:video_id>', methods=['POST'])
+@login_required
+def analyze_transcript(video_id):
+    try:
+        @check_limits(feature='ai_generation')
+        def do_analysis():
+            try:
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+                full_transcript = " ".join([item['text'] for item in transcript_list])
+            except Exception as e:
+                error_message = str(e)
+                if "Could not retrieve a transcript for the video" in error_message:
+                    error_message = "Transcripts are disabled for this video."
+                return jsonify({'error': error_message}), 404
+            
+            ai_analysis = analyze_transcript_with_ai(full_transcript)
+            
+            if 'error' in ai_analysis:
+                return jsonify({'error': ai_analysis['error']}), 500
+            
+            return jsonify(ai_analysis)
+        
+        return do_analysis()
+    
+    except RateLimitExceeded as e:
+        return jsonify({'error': str(e)}), 429
+    except Exception as e:
+        return jsonify({'error': 'An unexpected server error occurred.'}), 500

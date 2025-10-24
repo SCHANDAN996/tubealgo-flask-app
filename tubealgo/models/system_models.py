@@ -4,6 +4,7 @@ import os
 import json
 from datetime import datetime
 from .. import db
+from sqlalchemy.exc import OperationalError
 
 class SystemLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -15,7 +16,6 @@ class SystemLog(db.Model):
 def log_system_event(message, log_type='INFO', details=None):
     """Logs an event to the database and sends a notification for critical errors."""
     try:
-        # === बदलाव यहाँ है: इम्पोर्ट को फंक्शन के अंदर ले जाया गया है ===
         from ..services.notification_service import send_telegram_message 
         
         details_str = ""
@@ -65,14 +65,25 @@ class SiteSetting(db.Model):
     value = db.Column(db.Text, nullable=True)
 
 def get_setting(key, default=None):
-    setting = SiteSetting.query.get(key)
-    if setting and setting.value is not None:
-        if setting.value.lower() == 'true': return True
-        if setting.value.lower() == 'false': return False
-        return setting.value
+    """
+    Safely gets a setting from the database.
+    Returns default if the table doesn't exist (e.g., during migrations).
+    """
+    try:
+        setting = SiteSetting.query.get(key)
+        if setting and setting.value is not None:
+            if setting.value.lower() == 'true': return True
+            if setting.value.lower() == 'false': return False
+            return setting.value
+    except OperationalError:
+        # This can happen if the db is not initialized yet (e.g., during flask db init)
+        return default
     return default
 
 def get_config_value(key, default=None):
+    """
+    Gets a configuration value, prioritizing the database over environment variables.
+    """
     db_value = get_setting(key)
     if db_value is not None:
         if isinstance(db_value, bool):

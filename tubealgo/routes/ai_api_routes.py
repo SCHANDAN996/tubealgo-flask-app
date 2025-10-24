@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
-from ..services.ai_service import generate_titles_and_tags, generate_description
+from ..services.ai_service import generate_titles_and_tags, generate_description, generate_script_outline
 from ..decorators import check_limits, RateLimitExceeded
 
 ai_api_bp = Blueprint('ai_api', __name__, url_prefix='/manage/api')
@@ -62,6 +62,25 @@ def api_generate_description():
                 return jsonify({'error': 'Topic and title are required.'}), 400
                 
             result = generate_description(current_user, topic, title, language)
+            return jsonify(result)
+        return do_api_generation()
+    except RateLimitExceeded as e:
+        return jsonify({'error': str(e), 'details': str(e)}), 429
+
+# --- नया रूट यहाँ जोड़ा गया है ---
+@ai_api_bp.route('/generate-script', methods=['POST'])
+@login_required
+def api_generate_script():
+    try:
+        @check_limits(feature='ai_generation')
+        def do_api_generation():
+            data = request.json
+            topic = data.get('topic')
+            language = data.get('language', 'English')
+            if not topic:
+                return jsonify({'error': 'Topic is required.'}), 400
+            
+            result = generate_script_outline(topic, language)
             return jsonify(result)
         return do_api_generation()
     except RateLimitExceeded as e:

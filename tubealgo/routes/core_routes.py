@@ -1,9 +1,9 @@
 # tubealgo/routes/core_routes.py
 
 from flask import Blueprint, render_template, request, session, flash, redirect, url_for
-from flask_wtf import FlaskForm # <-- यह नई लाइन जोड़ें
+from flask_wtf import FlaskForm
 from tubealgo.models import get_setting, SubscriptionPlan
-from tubealgo.services.youtube_fetcher import analyze_channel
+from tubealgo.services.channel_fetcher import analyze_channel # <-- यहाँ बदलाव किया गया है
 
 core_bp = Blueprint('core', __name__)
 
@@ -22,15 +22,13 @@ def home():
 
 @core_bp.route('/pricing')
 def pricing():
-    # --- यहाँ बदलाव किया गया है ---
-    form = FlaskForm() # एक खाली फॉर्म बनाएं ताकि CSRF टोकन उपलब्ध हो
+    form = FlaskForm()
     plans = SubscriptionPlan.query.filter(SubscriptionPlan.plan_id != 'free').order_by(SubscriptionPlan.price).all()
     
     seo_data = {
         'title': get_setting('seo_pricing_title', 'Pricing & Plans - TubeAlgo'),
         'description': get_setting('seo_pricing_description', "Explore TubeAlgo's affordable pricing plans.")
     }
-    # फॉर्म को टेम्पलेट में पास करें
     return render_template('pricing.html', plans=plans, form=form, **seo_data)
 
 @core_bp.route('/about')
@@ -69,7 +67,7 @@ def privacy():
 def instant_analysis():
     if session.get('free_analysis_used', 0) >= 2:
         flash("You've used your free analyses. Please sign up to continue using the tool!", "error")
-        return redirect(url_for('auth.signup'))
+        return redirect(url_for('auth_local.signup'))
 
     channel_url = request.form.get('channel_url')
     if not channel_url:

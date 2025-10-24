@@ -1,25 +1,60 @@
 # tubealgo/__init__.py
 
 import os
-from flask import Flask
+from flask import Flask, url_for
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
+from flask_login import LoginManager, current_user
+from flask_migrate import Migrate
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from celery import Celery, Task
 from celery.schedules import crontab
 import config
+from sqlalchemy.exc import OperationalError
+import pytz
+from flask_wtf.csrf import generate_csrf
+# <<< Flask-SSE इम्पोर्ट करें >>>
+from flask_sse import sse
 
 load_dotenv()
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
-
-# Celery ऑब्जेक्ट को यहाँ बिना कॉन्फ़िगरेशन के बनाया गया है
+limiter = Limiter(key_func=get_remote_address)
 celery = Celery(__name__)
+migrate = Migrate()
+
+def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
+    """Jinja filter to convert a UTC datetime object to a user's preferred timezone."""
+    if not utc_dt:
+        return ""
+
+    # Default to IST if user or timezone is not set
+    user_tz_str = 'Asia/Kolkata'
+    if current_user.is_authenticated and current_user.timezone:
+        user_tz_str = current_user.timezone
+
+    try:
+        user_tz = pytz.timezone(user_tz_str)
+    except pytz.UnknownTimeZoneError:
+        user_tz = pytz.timezone('Asia/Kolkata')
+
+    # Make the naive datetime from DB timezone-aware (it's UTC)
+    if isinstance(utc_dt, datetime) and utc_dt.tzinfo is None:
+        utc_dt = utc_dt.replace(tzinfo=pytz.utc)
+    elif not isinstance(utc_dt, datetime): # Handle potential non-datetime values
+         return str(utc_dt) # Return as string if not datetime
+
+    # Convert to user's timezone
+    try:
+        local_dt = utc_dt.astimezone(user_tz)
+        return local_dt.strftime(fmt)
+    except Exception:
+         # Fallback if conversion fails
+         return utc_dt.strftime(fmt) + " UTC"
+
 
 def create_app():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -34,8 +69,13 @@ def create_app():
     )
 
     app.config.from_object(config.Config)
-    
-    # Celery कॉन्फ़िगरेशन को यहाँ ऐप कॉन्टेक्स्ट के अंदर अपडेट करें
+
+    # <<< SSE Configuration >>>
+    # Ensure REDIS_URL is in the config (it should be from config.py)
+    app.config["REDIS_URL"] = app.config.get("REDIS_URL", "redis://127.0.0.1:6379/0")
+    # Register the SSE blueprint
+    app.register_blueprint(sse, url_prefix='/stream')
+
     celery.conf.update(
         broker_url=app.config["CELERY_BROKER_URL"],
         result_backend=app.config["CELERY_RESULT_BACKEND"]
@@ -43,36 +83,65 @@ def create_app():
     celery.conf.beat_schedule = {
         'take-daily-snapshots-every-day': {
             'task': 'tubealgo.jobs.take_daily_snapshots',
-            'schedule': crontab(hour=0, minute=5),  # Runs daily at 00:05 UTC
+            'schedule': crontab(hour=0, minute=5), # Runs daily at 00:05 UTC
         },
         'check-for-new-videos-every-hour': {
             'task': 'tubealgo.jobs.check_for_new_videos',
-            'schedule': crontab(minute=0),  # Runs at the start of every hour
+            'schedule': crontab(minute=0), # Runs every hour at minute 0
         },
         'update-all-dashboards-every-4-hours': {
             'task': 'tubealgo.jobs.update_all_dashboards',
             'schedule': crontab(minute=0, hour='*/4'), # Runs every 4 hours
         },
+        'take-video-snapshots-every-3-hours': {
+            'task': 'tubealgo.jobs.take_video_snapshots',
+            'schedule': crontab(minute=30, hour='*/3'), # Runs every 3 hours at minute 30
+        },
+        # --- बदलाव यहाँ: नया शेड्यूल जोड़ा गया ---
+        'cleanup-old-snapshots-daily': {
+            'task': 'tubealgo.jobs.cleanup_old_snapshots',
+            'schedule': crontab(hour=1, minute=0), # Runs daily at 01:00 UTC
+        },
+        # --- बदलाव खत्म ---
     }
-    
-    # Context Task Class ताकि Celery टास्क Flask कॉन्टेक्स्ट का उपयोग कर सकें
+
+
     class ContextTask(Task):
         def __call__(self, *args, **kwargs):
             with app.app_context():
                 return self.run(*args, **kwargs)
     celery.Task = ContextTask
 
-    db.init_app(app)
-    login_manager.init_app(app)
-    limiter.init_app(app)
+    app.celery = celery
 
-    app.jinja_env.filters['relative_time'] = format_relative_time
-    login_manager.login_view = 'auth.login'
+    db.init_app(app)
+    migrate.init_app(app, db)
+
+    login_manager.init_app(app)
+    # --- यह 'auth.login' से 'auth_local.login' में बदला गया (Project 47 के अनुसार) ---
+    login_manager.login_view = 'auth_local.login'
     login_manager.login_message_category = "error"
 
+    limiter.init_app(app)
+    # Use Redis for limiter storage if REDIS_URL is set
+    limiter_storage_uri = app.config.get("REDIS_URL", "memory://")
+    limiter.storage_uri = limiter_storage_uri
+
+
+    # Register custom Jinja filters
+    app.jinja_env.filters['relative_time'] = format_relative_time
+    app.jinja_env.filters['localize'] = localize_datetime
+
+
     # Blueprints
-    from .auth import auth as auth_blueprint
-    app.register_blueprint(auth_blueprint, url_prefix='/')
+    # --- auth.py को auth_local.py और auth_google.py से बदला गया ---
+    from .auth_local import auth_local_bp
+    app.register_blueprint(auth_local_bp, url_prefix='/')
+
+    from .auth_google import auth_google_bp
+    app.register_blueprint(auth_google_bp, url_prefix='/')
+    # ---
+
     from .routes.core_routes import core_bp
     app.register_blueprint(core_bp, url_prefix='/')
     from .routes.dashboard_routes import dashboard_bp
@@ -80,71 +149,185 @@ def create_app():
     from .routes.competitor_routes import competitor_bp
     app.register_blueprint(competitor_bp, url_prefix='/')
     from .routes.analysis_routes import analysis_bp
-    app.register_blueprint(analysis_bp, url_prefix='/')   
+    app.register_blueprint(analysis_bp, url_prefix='/')
     from .routes.api_routes import api_bp
     app.register_blueprint(api_bp)
+    from .routes.ai_api_routes import ai_api_bp
+    app.register_blueprint(ai_api_bp) # (यह प्रोजेक्ट 43 में /manage/api पर था, अब यह / पर है)
     from .routes.tool_routes import tool_bp
     app.register_blueprint(tool_bp, url_prefix='/')
     from .routes.settings_routes import settings_bp
     app.register_blueprint(settings_bp, url_prefix='/')
+
+    # --- यह लाइन जोड़ी गई है ---
     from .routes.payment_routes import payment_bp
-    app.register_blueprint(payment_bp, url_prefix='/')
-    from .routes.admin_routes import admin_bp
+    app.register_blueprint(payment_bp, url_prefix='/payment') # '/payment' prefix का उपयोग
+
+    # --- admin_routes.py को admin blueprint से बदला गया ---
+    from .routes.admin import admin_bp
     app.register_blueprint(admin_bp, url_prefix='/admin')
-    from .routes.manager_routes import manager_bp
-    app.register_blueprint(manager_bp)
+
+    # --- manager_routes.py को video_manager_routes.py से बदला गया ---
+    from .routes.video_manager_routes import video_manager_bp
+    app.register_blueprint(video_manager_bp, url_prefix='/manage')
+
+    from .routes.playlist_manager_routes import playlist_manager_bp
+    app.register_blueprint(playlist_manager_bp, url_prefix='/manage')
+
+    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    from .routes.ab_test_routes import ab_test_bp
+    app.register_blueprint(ab_test_bp, url_prefix='/manage')
+
+    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    # from .routes.comment_routes import comment_bp
+    # app.register_blueprint(comment_bp)
+
+    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    from .routes.report_routes import report_bp
+    app.register_blueprint(report_bp)
+
+    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    from .routes.video_analytics_routes import video_analytics_bp
+    app.register_blueprint(video_analytics_bp)
+
     from .routes.planner_routes import planner_bp
     app.register_blueprint(planner_bp)
     from .routes.goal_routes import goal_bp
     app.register_blueprint(goal_bp)
 
-    from . import models
+    # --- यह प्रोजेक्ट 47 से जोड़ा गया ---
+    from .routes.user_routes import user_bp
+    app.register_blueprint(user_bp)
+
+
+    from . import models # Import models after db is initialized
     from .services.ai_service import initialize_ai_clients
-    
+
+    @app.after_request
+    def add_security_headers(response):
+        # Basic security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        # Allow framing only by self to prevent clickjacking
+        response.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
+        # Remove potentially conflicting headers if set by other middleware
+        response.headers.pop('X-Frame-Options', None)
+        # X-XSS-Protection is deprecated, CSP is preferred
+        response.headers.pop('X-XSS-Protection', None)
+        # Don't suggest caching sensitive pages
+        if response.mimetype == 'text/html':
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
+
+    @app.context_processor
+    def override_url_for():
+        # Version static files based on modification time for cache busting
+        def dated_url_for(endpoint, **values):
+            if endpoint == 'static':
+                filename = values.get('filename', None)
+                if filename:
+                    file_path = os.path.join(app.static_folder, filename)
+                    if os.path.exists(file_path):
+                        values['v'] = int(os.stat(file_path).st_mtime)
+            return url_for(endpoint, **values)
+        return dict(url_for=dated_url_for)
+
     @app.context_processor
     def inject_now_and_settings():
+        # Make datetime and get_setting available in all templates
         from .models import get_setting
         return {'now': datetime.utcnow, 'get_setting': get_setting}
 
+    @app.context_processor
+    def inject_csrf_token():
+        # Make CSRF token generation available in templates if needed outside forms
+        return dict(csrf_token=generate_csrf)
+
     with app.app_context():
-        db.create_all()
+        # Run functions requiring app context on startup
         seed_plans()
         print("Initializing AI clients within app context...")
         initialize_ai_clients()
-    
+
     return app
 
-def format_relative_time(dt_str):
-    if not dt_str: return ""
-    dt_obj = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+def format_relative_time(dt_input):
+    """Jinja filter to format datetime object or string into relative time."""
+    if not dt_input: return ""
+
+    if isinstance(dt_input, str):
+        try:
+            # Handle ISO format strings (with or without Z)
+            dt_obj = datetime.fromisoformat(dt_input.replace('Z', '+00:00'))
+        except ValueError:
+            return dt_input # Return original string if parsing fails
+    elif isinstance(dt_input, datetime):
+        dt_obj = dt_input
+    else:
+        return str(dt_input) # Return string representation for other types
+
+    # Ensure dt_obj is timezone-aware (assume UTC if naive)
+    if dt_obj.tzinfo is None:
+        dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+
     now = datetime.now(timezone.utc)
     diff = now - dt_obj
     seconds = diff.total_seconds()
+
+    if seconds < 0: return "in the future" # Handle future dates if necessary
     if seconds < 60: return "just now"
     minutes = seconds / 60
     if minutes < 60: return f"{int(minutes)} minute{'s' if int(minutes) > 1 else ''} ago"
     hours = minutes / 60
     if hours < 24: return f"{int(hours)} hour{'s' if int(hours) > 1 else ''} ago"
     days = hours / 24
-    if days < 30: return f"{int(days)} day{'s' if int(days) > 1 else ''} ago"
-    months = days / 30
+    if days < 7: return f"{int(days)} day{'s' if int(days) > 1 else ''} ago"
+    weeks = days / 7
+    if weeks < 4.345: # Average weeks in a month
+        return f"{int(weeks)} week{'s' if int(weeks) > 1 else ''} ago"
+    months = days / 30.437 # Average days in a month
     if months < 12: return f"{int(months)} month{'s' if int(months) > 1 else ''} ago"
-    years = months / 12
+    years = days / 365.25 # Account for leap years
     return f"{int(years)} year{'s' if int(years) > 1 else ''} ago"
 
 def seed_plans():
+    """Seeds the database with default subscription plans if none exist."""
     from .models import SubscriptionPlan
     from sqlalchemy import inspect
-    inspector = inspect(db.engine)
-    if not inspector.has_table("subscription_plan"):
-        return
-    if SubscriptionPlan.query.count() == 0:
-        print("Seeding subscription plans...")
-        free_plan = SubscriptionPlan(plan_id='free', name='Free', price=0, slashed_price=None, competitors_limit=2, keyword_searches_limit=5, ai_generations_limit=3, has_discover_tools=False, has_ai_suggestions=False, playlist_suggestions_limit=3)
-        creator_plan = SubscriptionPlan(plan_id='creator', name='Creator', price=39900, slashed_price=79900, competitors_limit=10, keyword_searches_limit=50, ai_generations_limit=30, has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=10)
-        pro_plan = SubscriptionPlan(plan_id='pro', name='Pro', price=99900, slashed_price=199900, competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1, has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=-1)
-        db.session.add(free_plan)
-        db.session.add(creator_plan)
-        db.session.add(pro_plan)
-        db.session.commit()
-        print("Plans seeded successfully.")
+
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table("subscription_plan"):
+            print("Skipping seed_plans: table 'subscription_plan' does not exist (likely during migration).")
+            return
+
+        if SubscriptionPlan.query.count() == 0:
+            print("Seeding subscription plans...")
+            free_plan = SubscriptionPlan(
+                plan_id='free', name='Free', price=0, slashed_price=None,
+                competitors_limit=2, keyword_searches_limit=5, ai_generations_limit=3,
+                has_discover_tools=False, has_ai_suggestions=False, playlist_suggestions_limit=3,
+                has_comment_reply=False, is_popular=False
+            )
+            creator_plan = SubscriptionPlan(
+                plan_id='creator', name='Creator', price=39900, slashed_price=79900,
+                competitors_limit=10, keyword_searches_limit=50, ai_generations_limit=30,
+                has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=10,
+                has_comment_reply=False, is_popular=True # Mark Creator as popular
+            )
+            pro_plan = SubscriptionPlan(
+                plan_id='pro', name='Pro', price=99900, slashed_price=199900,
+                competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1, # -1 for unlimited
+                has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=-1,
+                has_comment_reply=True, is_popular=False
+            )
+            db.session.add_all([free_plan, creator_plan, pro_plan])
+            db.session.commit()
+            print("Plans seeded successfully.")
+    except OperationalError:
+        print("Skipping seed_plans due to database schema mismatch (likely during migration).")
+        db.session.rollback()
+    except Exception as e:
+        print(f"Error seeding plans: {e}")
+        db.session.rollback()

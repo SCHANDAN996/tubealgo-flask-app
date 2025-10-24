@@ -24,9 +24,6 @@ class Payment(db.Model):
     status = db.Column(db.String(20), nullable=False, default='captured')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     
-    # --- backref यहाँ से हटा दिया गया है ---
-    # user = db.relationship('User', backref='payments') # This line caused the error
-
 class SubscriptionPlan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.String(50), unique=True, nullable=False)
@@ -40,3 +37,7 @@ class SubscriptionPlan(db.Model):
     has_ai_suggestions = db.Column(db.Boolean, default=False)
     playlist_suggestions_limit = db.Column(db.Integer, nullable=False, default=3)
     is_popular = db.Column(db.Boolean, default=False)
+    
+    # === बदलाव यहाँ है: नया कॉलम जोड़ा गया ===
+    has_comment_reply = db.Column(db.Boolean, nullable=False, default=False)
+    # === बदलाव यहाँ खत्म है ===

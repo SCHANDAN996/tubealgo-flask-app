@@ -2,23 +2,28 @@
 
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
-from tubealgo.models import Competitor, ChannelSnapshot
+# === बदलाव यहाँ है: VideoSnapshot और datetime को इम्पोर्ट किया गया ===
+from tubealgo.models import Competitor, ChannelSnapshot, VideoSnapshot
 from tubealgo.services.cache_manager import get_from_cache, set_to_cache
-from tubealgo.services.youtube_fetcher import (
-    analyze_channel, get_latest_videos, get_most_viewed_videos, 
-    get_channel_main_category, search_for_channels, get_video_details,
-    get_channel_playlists, get_most_used_tags, get_all_channel_videos
+from tubealgo.services.channel_fetcher import (
+    analyze_channel, get_channel_main_category, get_channel_playlists, 
+    get_most_used_tags
 )
+from tubealgo.services.video_fetcher import (
+    get_latest_videos, get_most_viewed_videos, get_video_details,
+    get_all_channel_videos
+)
+from tubealgo.services.discovery_fetcher import search_for_channels
 import json
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 def get_full_competitor_package(competitor_id, force_refresh=False):
     """
-    Fetches ALL data for a competitor, including growth stats.
+    Fetches ALL data for a competitor, including growth stats and trending status.
     """
-    cache_key = f"competitor_package_v5:{competitor_id}" # Version updated for new growth stats
+    cache_key = f"competitor_package_v6:{competitor_id}" # वर्शन बदला गया
     if not force_refresh:
         cached_data = get_from_cache(cache_key)
         if cached_data:
@@ -30,20 +35,8 @@ def get_full_competitor_package(competitor_id, force_refresh=False):
     if 'error' in details:
         return {'error': details['error']}
 
-    # ===== Growth Data Calculation Logic =====
     growth_data = { '1d': None, '7d': None }
     
-    # This logic assumes that a background job is taking daily snapshots for competitors as well.
-    # To implement this, your `take_daily_snapshots` job in `jobs.py` needs to be modified
-    # to iterate through all competitors in the database, not just user's main channels.
-    # For now, this is a placeholder. If snapshots for competitors are not being taken,
-    # this will correctly return `None` and the frontend will show "Tracking started...".
-    
-    # Placeholder logic - this part needs a background job to be fully effective.
-    # Let's assume for now that the snapshots are not available.
-    
-    # ==========================================
-
     latest_videos_all = get_all_channel_videos(comp.channel_id_youtube)
     if isinstance(latest_videos_all, dict) and 'error' in latest_videos_all:
          return {'error': latest_videos_all['error']}
@@ -57,6 +50,36 @@ def get_full_competitor_package(competitor_id, force_refresh=False):
             all_videos_dict[video['id']] = video
     
     all_videos_unique = list(all_videos_dict.values())
+
+    # === बदलाव यहाँ से शुरू है: ट्रेंडिंग स्थिति की गणना ===
+    for video in all_videos_unique:
+        video['trending_status'] = None
+        try:
+            # वीडियो के लिए नवीनतम दो स्नैपशॉट प्राप्त करें
+            snapshots = VideoSnapshot.query.filter_by(video_id=video['id']).order_by(VideoSnapshot.timestamp.desc()).limit(2).all()
+            
+            if len(snapshots) == 2:
+                latest_snapshot = snapshots[0]
+                previous_snapshot = snapshots[1]
+
+                views_gained = latest_snapshot.view_count - previous_snapshot.view_count
+                time_diff_seconds = (latest_snapshot.timestamp - previous_snapshot.timestamp).total_seconds()
+
+                if time_diff_seconds > 60: # कम से कम एक मिनट का अंतर हो
+                    vph = (views_gained / time_diff_seconds) * 3600
+                    
+                    upload_date = datetime.fromisoformat(video['upload_date'].replace('Z', '+00:00'))
+                    days_since_upload = (datetime.now(timezone.utc) - upload_date).days
+
+                    # ट्रेंडिंग के लिए नियम
+                    if vph > 1000 and days_since_upload <= 3:
+                        video['trending_status'] = '🔥 Trending'
+                    elif vph > 500 and days_since_upload <= 7:
+                        video['trending_status'] = '🚀 Fast Growing'
+        except Exception:
+            # कोई त्रुटि होने पर चुपचाप जारी रखें
+            continue
+    # === बदलाव यहाँ खत्म है ===
 
     recent_videos_data = {
         'videos': sorted(all_videos_unique, key=lambda x: x.get('upload_date', ''), reverse=True),
@@ -74,7 +97,7 @@ def get_full_competitor_package(competitor_id, force_refresh=False):
 
     final_data = {
         'details': details,
-        'growth': growth_data, # Add the growth data to the package
+        'growth': growth_data,
         'recent_videos_data': recent_videos_data,
         'most_viewed_videos_data': most_viewed_videos_data,
         'playlists': playlists,
