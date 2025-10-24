@@ -2,26 +2,33 @@
 
 function aiGeneratorPage() {
     return {
-        // --- State Variables ---
+        // State variables
         isLoading: false,
         loadingMessage: '',
+        step: 1, // 1: Topic, 2: Titles, 3: Content
         topic: PAGE_DATA.initialTopic || '',
-        step: 'initial', // 'initial', 'titles', 'description'
-        results: { titles: [], tags: { main_keywords: [], secondary_keywords: [], broad_tags: [] } }, // Correctly initialized
-        selectedTitleData: null,
-        generatedDescription: '',
         csrfToken: '',
+        
+        // Step 2 data
+        generatedTitles: [],
+        selectedTitle: null,
+        
+        // Step 3 data
+        generatedContent: {
+            description: '',
+            outline: '',
+            tags: {}
+        },
+        activeTab: 'description',
 
         init() {
-            // Flask-WTF forms automatically add a CSRF token input. We can find it.
             const csrfInput = document.querySelector('input[name="csrf_token"]');
             if (csrfInput) {
                 this.csrfToken = csrfInput.value;
             }
         },
 
-        // --- Methods ---
-        async generateTitlesAndTags() {
+        async generateTitles() {
             if (!this.topic.trim()) {
                 alert('Please enter a topic for your video.');
                 return;
@@ -30,62 +37,62 @@ function aiGeneratorPage() {
             this.loadingMessage = 'Generating Titles & Tags...';
 
             try {
-                const response = await fetch(PAGE_DATA.urls.generate, {
+                const response = await fetch(PAGE_DATA.urls.generateTitles, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': this.csrfToken 
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken },
                     body: JSON.stringify({ topic: this.topic })
                 });
-
                 const data = await response.json();
                 if (!response.ok) {
-                    throw new Error(data.error || 'Failed to generate content.');
+                    throw new Error(data.error || 'Failed to generate titles.');
                 }
-                
-                this.results = data;
-                this.step = 'titles';
-
+                this.generatedTitles = data.titles || [];
+                // Save tags for later use in step 3
+                this.generatedContent.tags = data.tags || {};
+                this.selectedTitle = null; // Reset selection
+                this.step = 2;
             } catch (error) {
                 alert('Error: ' + error.message);
-                this.step = 'initial';
             } finally {
                 this.isLoading = false;
             }
         },
 
-        selectTitleAndProceed(titleData) {
-            this.selectedTitleData = titleData;
-            this.generatedDescription = ''; // Reset previous description
-            this.step = 'description';
-        },
-
-        async generateDescription() {
-            if (!this.selectedTitleData || !this.selectedTitleData.title) {
-                alert('Please select a title first.');
+        async generateFinalContent() {
+            if (!this.selectedTitle) {
+                alert('Please select a title before proceeding.');
                 return;
             }
+
             this.isLoading = true;
-            this.loadingMessage = 'Generating Description...';
+            this.loadingMessage = 'Generating final content...';
+            this.activeTab = 'description'; // Reset to first tab
 
             try {
-                const response = await fetch(PAGE_DATA.urls.generateDescription, {
+                // We already have the tags from the first call.
+                // Now, let's fetch description and script outline in parallel.
+                const descPromise = fetch(PAGE_DATA.urls.generateDescription, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': this.csrfToken
-                    },
-                    body: JSON.stringify({
-                        topic: this.topic,
-                        title: this.selectedTitleData.title
-                    })
-                });
-                const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data.error || 'Failed to generate description.');
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken },
+                    body: JSON.stringify({ topic: this.topic, title: this.selectedTitle })
+                }).then(res => res.json());
+
+                const scriptPromise = fetch(PAGE_DATA.urls.generateScript, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken },
+                    body: JSON.stringify({ topic: this.topic, title: this.selectedTitle })
+                }).then(res => res.json());
+                
+                const [descResult, scriptResult] = await Promise.all([descPromise, scriptPromise]);
+
+                if (descResult.error || scriptResult.error) {
+                    throw new Error(descResult.error || scriptResult.error || 'Failed to generate content.');
                 }
-                this.generatedDescription = data.description;
+
+                this.generatedContent.description = descResult.description || 'Could not generate description.';
+                this.generatedContent.outline = scriptResult.outline || 'Could not generate script outline.';
+                
+                this.step = 3;
 
             } catch (error) {
                 alert('Error: ' + error.message);
@@ -105,17 +112,12 @@ function aiGeneratorPage() {
             });
         },
 
-        copyTags(tags, buttonEl) {
-            if (!tags || tags.length === 0) return;
-            this.copyToClipboard(tags.join(', '), buttonEl);
-        },
-
         copyAllTags(buttonEl) {
-            if (!this.results || !this.results.tags) return;
+            if (!this.generatedContent || !this.generatedContent.tags) return;
             const allTags = [
-                ...(this.results.tags.main_keywords || []),
-                ...(this.results.tags.secondary_keywords || []),
-                ...(this.results.tags.broad_tags || [])
+                ...(this.generatedContent.tags.main_keywords || []),
+                ...(this.generatedContent.tags.secondary_keywords || []),
+                ...(this.generatedContent.tags.broad_tags || [])
             ];
             this.copyToClipboard(allTags.join(', '), buttonEl);
         }
@@ -123,6 +125,5 @@ function aiGeneratorPage() {
 }
 
 document.addEventListener('alpine:init', () => {
-    // Register the aiGeneratorPage component with Alpine
     Alpine.data('aiGeneratorPage', aiGeneratorPage);
 });

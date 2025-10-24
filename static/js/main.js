@@ -6,3 +6,5 @@ import './competitors.js';
 import './dashboard.js';
 import './planner.js';
 import './video_form.js';
+import './video_manager.js';
+

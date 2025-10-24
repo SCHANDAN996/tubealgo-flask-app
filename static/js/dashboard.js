@@ -5,65 +5,165 @@ function dashboard() {
         isLoading: true,
         error: null,
         data: {
-            kpis: { subscribers: 0, views: 0, videos: 0, subscribers_change: 0, views_change: 0 },
+            kpis: {},
             growth_chart: { labels: [], subscribers: [], views: [] },
             ai_assistant: [],
-            trending_videos: [],
-            goal: null
+            top_recent_videos: [],
+            goal: null,
+            best_time_to_post: null,
+            layout: null
         },
         chart: null,
         activeChartMetric: 'subscribers',
-
-        // --- State for Goal Modal ---
         showGoalModal: false,
         goalError: '',
-        newGoal: {
-            type: 'subscribers',
-            target: null,
-            date: ''
-        },
-        
-        csrfToken: null, 
+        newGoal: { type: 'subscribers', target: null, date: '' },
+        csrfToken: null,
+        isSavingLayout: false,
+        saveStatus: '', // Can be 'Saving...', 'Saved!', or 'Error!'
+        showResetConfirmModal: false,
 
         init() {
-            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-            if (csrfMeta) {
-                this.csrfToken = csrfMeta.getAttribute('content');
+            // *** FIX: Corrected CSRF token selector ***
+            const csrfInput = document.querySelector('input[name="csrf_token"]'); // Looks anywhere
+            if (csrfInput) {
+                this.csrfToken = csrfInput.value;
+            } else {
+                console.error('CSRF Token input field not found!'); // This should not happen now
             }
+            // *** END FIX ***
             this.fetchData();
         },
 
         fetchData() {
-            // Add a cache-busting query parameter to ensure fresh data
+            this.isLoading = true;
             fetch(`/api/dashboard/main-data?t=${new Date().getTime()}`)
-                .then(res => {
-                    if (!res.ok) {
-                        return res.json().then(err => { throw new Error(err.error || 'Could not load dashboard data.') });
-                    }
-                    return res.json();
-                })
+                .then(res => res.json())
                 .then(apiData => {
                     this.data = apiData;
                     this.error = null;
-                    this.$nextTick(() => this.renderChart());
+                    this.$nextTick(() => {
+                        this.applyLayout();
+                        this.renderChart();
+                        this.initSortable();
+                    });
                 })
                 .catch(err => {
                     this.error = err.message;
-                    console.error("Dashboard fetch error:", err);
                 })
                 .finally(() => {
                     this.isLoading = false;
                 });
         },
-        
+
+        initSortable() {
+            const leftCol = document.getElementById('sortable-left');
+            const rightCol = document.getElementById('sortable-right');
+
+            const commonOptions = {
+                group: 'dashboard-cards',
+                animation: 150,
+                handle: '.drag-handle',
+                onEnd: () => this.saveLayout(),
+            };
+
+            if (leftCol && !leftCol.classList.contains('sortable-initialized')) {
+                new Sortable(leftCol, commonOptions);
+                leftCol.classList.add('sortable-initialized');
+            }
+            if (rightCol && !rightCol.classList.contains('sortable-initialized')) {
+                new Sortable(rightCol, commonOptions);
+                rightCol.classList.add('sortable-initialized');
+            }
+        },
+
+        applyLayout() {
+            if (!this.data.layout || !this.data.layout.left || !this.data.layout.right) return;
+            const leftCol = document.getElementById('sortable-left');
+            const rightCol = document.getElementById('sortable-right');
+            if (!leftCol || !rightCol) return;
+            const allCards = {};
+            document.querySelectorAll('#sortable-left > [data-id], #sortable-right > [data-id]').forEach(el => {
+                allCards[el.dataset.id] = el;
+            });
+            this.data.layout.left.forEach(id => {
+                if (allCards[id]) leftCol.appendChild(allCards[id]);
+            });
+            this.data.layout.right.forEach(id => {
+                if (allCards[id]) rightCol.appendChild(allCards[id]);
+            });
+        },
+
+        async saveLayout() {
+            this.isSavingLayout = true;
+            this.saveStatus = 'Saving...';
+
+            const leftIds = Array.from(document.getElementById('sortable-left').children).map(el => el.dataset.id);
+            const rightIds = Array.from(document.getElementById('sortable-right').children).map(el => el.dataset.id);
+            const newLayout = { left: leftIds, right: rightIds };
+
+            if (!this.csrfToken) { // Check if token was found during init
+                console.error('CSRF Token not found! Cannot save layout.');
+                this.saveStatus = 'Error!';
+                this.isSavingLayout = false;
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/dashboard/save-layout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrfToken },
+                    body: JSON.stringify(newLayout)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Server responded with an error.');
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.saveStatus = 'Saved!';
+                } else {
+                    throw new Error(data.error || 'Failed to save.');
+                }
+            } catch (error) {
+                this.saveStatus = 'Error!';
+                console.error("Failed to save layout:", error);
+            } finally {
+                this.isSavingLayout = false;
+                // Hide the message after 2 seconds
+                setTimeout(() => {
+                    this.saveStatus = '';
+                }, 2000);
+            }
+        },
+
+        resetLayout() {
+            this.showResetConfirmModal = true;
+        },
+
+        cancelReset() {
+            this.showResetConfirmModal = false;
+        },
+
+        proceedWithReset() {
+            this.showResetConfirmModal = false;
+            const defaultLayout = {
+                left: ['kpis', 'growth_chart', 'top_videos'],
+                right: ['goal', 'best_time', 'ai_assistant']
+            };
+            this.data.layout = defaultLayout;
+            this.applyLayout();
+            this.saveLayout();
+        },
+
         renderChart() {
             if (this.chart) { this.chart.destroy(); }
             if (!this.$refs.growthChart || !this.data.growth_chart || !this.data.growth_chart.labels) { return; }
-            
-            // === FIX: Get computed CSS variable and format it correctly for the canvas API ===
+
             const rootStyles = getComputedStyle(document.documentElement);
             const primaryColorHSL = rootStyles.getPropertyValue('--primary').trim();
-            // The value is "262 84% 54%", but canvas needs "262, 84%, 54%"
             const primaryColorCommaSeparated = primaryColorHSL.replace(/ /g, ',');
 
             const ctx = this.$refs.growthChart.getContext('2d');
@@ -96,7 +196,7 @@ function dashboard() {
                         y: { beginAtZero: false, grid: { color: gridColor }, ticks: { color: labelColor } },
                         x: { grid: { display: false }, ticks: { color: labelColor } }
                     },
-                    plugins: { 
+                    plugins: {
                         legend: { display: false },
                         tooltip: {
                             backgroundColor: 'hsl(var(--card))',
@@ -113,11 +213,6 @@ function dashboard() {
         updateChart(metric) {
             this.activeChartMetric = metric;
             this.renderChart();
-        },
-        
-        formatChange(value) {
-            const sign = value > 0 ? '+' : '';
-            return sign + Number(value).toLocaleString();
         },
 
         getIconForSuggestion(type) {
@@ -144,8 +239,12 @@ function dashboard() {
 
             try {
                 const headers = { 'Content-Type': 'application/json' };
-                if (this.csrfToken) {
+                if (this.csrfToken) { // Use the token found during init
                     headers['X-CSRFToken'] = this.csrfToken;
+                } else {
+                     console.error("Cannot save goal: CSRF Token is missing."); // Added check
+                     this.goalError = "Security token missing. Please refresh the page.";
+                     return;
                 }
 
                 const response = await fetch('/api/goals/', {
@@ -157,14 +256,13 @@ function dashboard() {
                         target_date: this.newGoal.date || null
                     })
                 });
-
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.error || 'Failed to save goal.');
                 }
 
                 this.showGoalModal = false;
-                this.fetchData(); // Refresh dashboard to show the new goal
+                this.fetchData(); // Reload dashboard data to show the new goal
 
             } catch (error) {
                 this.goalError = error.message;
@@ -172,3 +270,7 @@ function dashboard() {
         }
     }
 }
+
+document.addEventListener('alpine:init', () => {
+    Alpine.data('dashboard', dashboard);
+});

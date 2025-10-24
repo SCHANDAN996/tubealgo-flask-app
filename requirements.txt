@@ -24,3 +24,8 @@ google-generativeai
 celery
 redis
 eventlet
+youtube-transcript-api
+pytrends
+Flask-Migrate
+WeasyPrint
+numpy

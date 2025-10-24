@@ -1,3 +1,4 @@
+/* tubealgo/static/css/main.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -92,7 +93,7 @@
     @apply list-disc pl-5 mt-2 space-y-2;
 }
 
-.script-content p, 
+.script-content p,
 .script-content li {
     @apply text-muted-foreground leading-relaxed;
 }
@@ -115,4 +116,13 @@
 /* Tooltip trigger wrapper */
 .tooltip-trigger {
   @apply cursor-pointer;
+}
+
+/* इस कोड को main.css फ़ाइल के अंत में जोड़ें */
+.youtube-icon-compliant {
+  width: 29px;
+  height: 24px;
+  margin: 0px;
+  vertical-align: middle;
+  display: inline-block;
 }
