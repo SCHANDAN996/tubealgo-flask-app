@@ -20,13 +20,16 @@ services:
     env: python
     plan: free
     buildCommand: "./build.sh"
-    # --- Start command runs Gunicorn with Gevent worker ---
-    startCommand: "gunicorn -w 1 -k gevent run:app" # Use -k syntax
+    startCommand: "gunicorn run:app" # <<<--- सरल कमांड
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0 # अपना Python version डालें
+        value: 3.11.0
       - key: NODE_VERSION
-        value: 20.10.0 # अपना Node version डालें
+        value: 20.10.0
+      # --- Gunicorn वर्कर क्लास यहाँ सेट करें --- #
+      - key: GUNICORN_CMD_ARGS # <<<--- नया एनवायरनमेंट वेरिएबल
+        value: "--workers=1 --worker-class=gevent" # <<<--- gevent वर्कर यहाँ निर्दिष्ट
+      # --- बाकी envVars --- #
       - key: SECRET_KEY
         generateValue: true
       - key: REDIS_URL
