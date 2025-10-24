@@ -1,6 +1,6 @@
 # run.py
-import eventlet # Eventlet को पहले इम्पोर्ट करें
-eventlet.monkey_patch() # <<<--- यह बिल्कुल पहली एक्जीक्यूटेबल लाइन होनी चाहिए
+import gevent.monkey # <<<--- नई लाइन
+gevent.monkey.patch_all() # <<<--- नई लाइन (यह पहली एक्जीक्यूटेबल लाइन होनी चाहिए)
 
 # अब बाकी इम्पोर्ट्स करें
 from tubealgo import create_app
