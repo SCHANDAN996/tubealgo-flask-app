@@ -8,112 +8,108 @@ services:
     env: docker
     image:
       url: redis:7
-    plan: free
-    disk:
-      name: redis-data
-      mountPath: /data
-      sizeGB: 1
+    plan: free #
+    disk: #
+      name: redis-data #
+      mountPath: /data #
+      sizeGB: 1 #
 
   # 2. Web Service (Flask application served by Gunicorn)
   - type: web
     name: tubealgo
     env: python
-    plan: free
-    buildCommand: "./build.sh"
-    # --- Start command runs Gunicorn with Eventlet worker --- ### यह लाइन महत्वपूर्ण है ###
-    startCommand: "gunicorn --worker-class eventlet -w 1 run:app"
+    plan: free #
+    buildCommand: "./build.sh" #
+    # --- Start command runs Gunicorn with Gevent worker --- ### यह लाइन बदली गई है ###
+    startCommand: "gunicorn --worker-class gevent -w 1 run:app" # <<<--- बदलाव यहाँ है
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0 # अपना Python version डालें
       - key: NODE_VERSION
         value: 20.10.0 # अपना Node version डालें
       - key: SECRET_KEY
-        generateValue: true
+        generateValue: true #
       - key: REDIS_URL
-        fromService: { type: pserv, name: redis, property: url }
+        fromService: { type: pserv, name: redis, property: url } #
       - key: FLASK_APP
-        value: "run.py"
+        value: "run.py" #
       - key: FLASK_ENV
-        value: "production"
+        value: "production" #
       # --- बाकी secrets (sync: false) ---
       - key: DATABASE_URL
-        fromDatabase: { name: tubealgo-database, property: connectionString }
+        fromDatabase: { name: tubealgo-database, property: connectionString } #
       - key: YOUTUBE_API_KEYS
-        sync: false
+        sync: false #
       - key: GOOGLE_CLIENT_ID
-        sync: false
+        sync: false #
       - key: GOOGLE_CLIENT_SECRET
-        sync: false
+        sync: false #
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false #
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        sync: false #
       - key: ADMIN_TELEGRAM_CHAT_ID
-        sync: false
+        sync: false #
       - key: MEASUREMENT_ID
-        sync: false
+        sync: false #
       - key: CASHFREE_APP_ID
-        sync: false
+        sync: false #
       - key: CASHFREE_SECRET_KEY
-        sync: false
+        sync: false #
       - key: CASHFREE_ENV
-        value: "PROD"
+        value: "PROD" #
 
   # 3. Celery Worker Service (पहले जैसा ही)
   - type: worker
     name: celery-worker
     env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A run:celery worker --loglevel=info"
+    plan: free #
+    buildCommand: "pip install -r requirements.txt" #
+    startCommand: "celery -A run:celery worker --loglevel=info" #
     envVars:
       - key: REDIS_URL
-        fromService: { type: pserv, name: redis, property: url }
+        fromService: { type: pserv, name: redis, property: url } #
       - key: DATABASE_URL
-        fromDatabase: { name: tubealgo-database, property: connectionString }
+        fromDatabase: { name: tubealgo-database, property: connectionString } #
       # --- secrets ---
       - key: YOUTUBE_API_KEYS
-        sync: false
+        sync: false #
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false #
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        sync: false #
       - key: ADMIN_TELEGRAM_CHAT_ID
-        sync: false
+        sync: false #
       - key: FLASK_ENV
-        value: "production"
+        value: "production" #
 
   # 4. Celery Beat Service (पहले जैसा ही)
   - type: worker
     name: celery-beat
     env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A run:celery beat --loglevel=info"
+    plan: free #
+    buildCommand: "pip install -r requirements.txt" #
+    startCommand: "celery -A run:celery beat --loglevel=info" #
     envVars:
       - key: REDIS_URL
-        fromService: { type: pserv, name: redis, property: url }
+        fromService: { type: pserv, name: redis, property: url } #
       - key: DATABASE_URL
-        fromDatabase: { name: tubealgo-database, property: connectionString }
+        fromDatabase: { name: tubealgo-database, property: connectionString } #
       # --- secrets ---
       - key: YOUTUBE_API_KEYS
-        sync: false
+        sync: false #
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false #
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        sync: false #
       - key: ADMIN_TELEGRAM_CHAT_ID
-        sync: false
+        sync: false #
       - key: FLASK_ENV
-        value: "production"
-
-# --- Release Phase Command (हटा दिया गया) ---
-# release:
-#   command: flask db upgrade
+        value: "production" #
 
 # --- Database Configuration (पहले जैसा ही) ---
 databases:
   - name: tubealgo-database
-    databaseName: tubealgodb
-    user: tubealgouser
-    plan: free
+    databaseName: tubealgodb #
+    user: tubealgouser #
+    plan: free #
