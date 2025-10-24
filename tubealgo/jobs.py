@@ -1,7 +1,5 @@
 # tubealgo/jobs.py
 
-# import eventlet # <<<--- इस लाइन को हटाएं या कमेंट करें
-# eventlet.monkey_patch() # <<<--- इस लाइन को हटाएं या कमेंट करें
 
 import traceback
 import os
