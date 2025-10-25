@@ -2,10 +2,12 @@
 
 from .auth_forms import SignupForm, LoginForm
 from .youtube_forms import PlaylistForm, VideoForm, UploadForm
-from .admin_forms import CouponForm, PlanForm
+# <<< बदलाव यहाँ है: PlanForm को SubscriptionPlanForm से बदला गया >>>
+from .admin_forms import CouponForm, SubscriptionPlanForm
 
 __all__ = [
     "SignupForm", "LoginForm",
     "PlaylistForm", "VideoForm", "UploadForm",
-    "CouponForm", "PlanForm"
+    # <<< बदलाव यहाँ है: PlanForm को SubscriptionPlanForm से बदला गया >>>
+    "CouponForm", "SubscriptionPlanForm"
 ]
