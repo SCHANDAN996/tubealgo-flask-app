@@ -5,6 +5,9 @@
 {% block content %}
 <div>
     <form method="POST" action="{{ url_for('admin.ai_settings') }}" class="space-y-6">
+        {# <<< बदलाव यहाँ है: CSRF टोकन जोड़ा गया >>> #}
+        {{ form.hidden_tag() }}
+
         <div class="bg-card p-6 rounded-lg border">
             <h3 class="text-lg font-semibold border-b pb-2 mb-4">Select AI Model</h3>
             <div class="max-w-xl">
@@ -23,7 +26,7 @@
         <div class="bg-card p-6 rounded-lg border">
             <h3 class="text-lg font-semibold border-b pb-2 mb-4">Manage Gemini API Keys</h3>
             <p class="text-sm text-muted-foreground mb-4">एक-एक करके अपनी सभी Gemini API Keys जोड़ें। सिस्टम अपने आप रोटेट करेगा और फेल होने पर अगली Key का उपयोग करेगा।</p>
-            
+
             <div id="api-key-list" class="space-y-3">
                 {% for key in current_keys %}
                 <div class="flex items-center gap-2 api-key-row">
@@ -34,7 +37,7 @@
                 </div>
                 {% endfor %}
             </div>
-            
+
             <button type="button" id="add-key-btn" class="mt-4 bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-semibold text-sm hover:bg-border">
                 <i class="fa-solid fa-plus mr-2"></i>Add Another Key
             </button>
@@ -108,7 +111,11 @@
         if (rows.length > 1) {
             button.parentElement.remove();
         } else {
-            button.parentElement.querySelector('input').value = '';
+            // Clear the value of the last remaining input instead of removing it
+            const inputField = button.parentElement.querySelector('input[name="gemini_keys"]');
+            if (inputField) {
+                 inputField.value = '';
+            }
         }
     }
 
@@ -118,6 +125,14 @@
         const loader = document.getElementById('test-results-loader');
         const list = document.getElementById('test-results-list');
         const button = this;
+        // <<< बदलाव यहाँ है: CSRF टोकन प्राप्त करें >>>
+        const csrfTokenInput = document.querySelector('input[name="csrf_token"]');
+        const csrfToken = csrfTokenInput ? csrfTokenInput.value : null;
+
+        if (!csrfToken) {
+             alert('CSRF token not found. Cannot perform test.');
+             return;
+        }
 
         // UI तैयार करें
         container.style.display = 'block';
@@ -133,18 +148,22 @@
         try {
             const response = await fetch("{{ url_for('admin.test_ai_config') }}", {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keys: keys, model: model })
+                 // <<< बदलाव यहाँ है: CSRF टोकन हेडर में जोड़ा गया >>>
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify({ keys: keys, model: model, csrf_token: csrfToken }) // Include in body too just in case
             });
             const data = await response.json();
 
-            if (data.results) {
-                data.results.forEach(result => {
+             // Check for CSRF error first
+            if (response.status === 400 && data.message && data.message.includes('CSRF')) {
+                list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">Error: ${data.message} Please refresh the page.</div>`;
+            } else if (data.results) {
+                 data.results.forEach(result => {
                     const resultDiv = document.createElement('div');
                     const isSuccess = result.status === 'Valid';
-                    
+
                     resultDiv.className = `flex items-center justify-between text-sm p-3 rounded-lg ${isSuccess ? 'bg-green-500/10 text-green-800' : 'bg-red-500/10 text-red-800'}`;
-                    
+
                     let reasonHtml = result.reason ? `<span class="text-xs ml-2">(${result.reason})</span>` : '';
 
                     resultDiv.innerHTML = `
@@ -157,10 +176,11 @@
                     list.appendChild(resultDiv);
                 });
             } else {
-                list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">${data.message || 'An unknown error occurred.'}</div>`;
+                list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">${data.message || 'An unknown error occurred during test.'}</div>`;
             }
         } catch (error) {
-            list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">Failed to run test. Check console for details.</div>`;
+            console.error("Test Config Fetch Error:", error); // Log the actual error
+            list.innerHTML = `<div class="p-3 rounded-lg bg-red-500/10 text-red-800 text-sm">Failed to run test. Check console for details. Error: ${error}</div>`;
         } finally {
             loader.style.display = 'none';
             button.disabled = false;
