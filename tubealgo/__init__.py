@@ -1,10 +1,9 @@
 # tubealgo/__init__.py
 
 import os
-from flask import Flask, url_for, session, g
+from flask import Flask, url_for, session, g, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
-# from flask_migrate import Migrate # <<<--- यह लाइन हटाएं (पहले से हटाई हुई थी)
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -21,7 +20,6 @@ load_dotenv()
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-# migrate = Migrate() # <<<--- यह लाइन हटाएं (पहले से हटाई हुई थी)
 csrf = CSRFProtect()
 
 def limiter_key_func():
@@ -119,15 +117,23 @@ def create_app():
     app.celery = celery
 
     db.init_app(app)
-    # migrate.init_app(app, db) # <<<--- यह लाइन हटाएं (पहले से हटाई हुई थी)
     csrf.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth_local.login'
     login_manager.login_message_category = "error"
 
+    # Fix rate limiter storage
+    limiter_storage_uri = app.config.get("REDIS_URL", "redis://localhost:6379/0")
     limiter.init_app(app)
-    limiter_storage_uri = app.config.get("REDIS_URL", "memory://")
     limiter.storage_uri = limiter_storage_uri
+
+    # Add CSRF exempt for API routes
+    from .routes.api_routes import api_bp
+    from .routes.ai_api_routes import ai_api_bp
+    
+    # Exempt API blueprints from CSRF
+    csrf.exempt(api_bp)
+    csrf.exempt(ai_api_bp)
 
     app.jinja_env.filters['relative_time'] = format_relative_time
     app.jinja_env.filters['localize'] = localize_datetime
@@ -213,6 +219,15 @@ def create_app():
     @app.context_processor
     def inject_csrf_token():
         return dict(csrf_token=generate_csrf)
+
+    # Add error handlers
+    @app.errorhandler(500)
+    def internal_error(error):
+        return render_template('errors/500.html'), 500
+
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return render_template('errors/404.html'), 500
 
     with app.app_context():
         # --- बदलाव यहाँ है: db.create_all() को कमेंट किया गया है ---
