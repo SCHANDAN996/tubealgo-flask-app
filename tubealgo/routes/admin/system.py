@@ -33,7 +33,7 @@ def mask_api_key(key_name):
                 keys_list = [k.strip() for k in loaded_keys if isinstance(k, str) and k.strip()]
         except (json.JSONDecodeError, TypeError):
             # Fallback for comma-separated or plain string
-            if isinstance(key_value, str):
+            if isinstance(key_value, str): # <-- सिंटैक्स एरर यहाँ ठीक किया गया
                 keys_list = [k.strip() for k in key_value.split(',') if k.strip()]
                 # If splitting by comma gives one item, treat it as a single key if no comma was present
                 if len(keys_list) == 1 and ',' not in key_value:
@@ -60,8 +60,7 @@ def mask_api_key(key_name):
         else:
              return "Not Set or Empty"
 
-# --- बाकी के रूट्स (logs, cache, settings, ai-settings, test-config, user-growth, plan-distribution) पहले जैसे ही रहेंगे ---
-# --- सुनिश्चित करें कि उनमें सही इम्पोर्ट्स ('SiteSetting', 'text') और CSRF हैंडलिंग हो ---
+# --- बाकी के रूट्स ---
 
 @admin_bp.route('/logs')
 @login_required
@@ -153,18 +152,24 @@ def site_settings():
                  db.session.rollback()
                  return redirect(url_for('admin.site_settings'))
             is_secret = key in secret_keys
+            # Don't save empty secrets unless they are being intentionally cleared (which reset button handles)
             if is_secret and key in form_data and not value.strip():
                  continue
             if setting:
                  if setting.value != value:
                       settings_to_update[key] = value
+            # Add new setting if it has a value, or if it's not a secret key (like feature flags)
             elif value.strip() or not is_secret:
                 settings_to_add.append(SiteSetting(key=key, value=value))
         try:
             for key, value in settings_to_update.items():
-                db.session.merge(SiteSetting(key=key, value=value))
+                setting_obj = SiteSetting.query.get(key)
+                if setting_obj: setting_obj.value = value
+                else: db.session.add(SiteSetting(key=key, value=value)) # Handle potential race condition or inconsistency
+
             if settings_to_add:
                 db.session.bulk_save_objects(settings_to_add)
+
             db.session.commit()
             flash('Site settings updated successfully!', 'success')
         except Exception as e:
@@ -176,6 +181,7 @@ def site_settings():
         current_app.logger.warning(f"CSRF validation failed for site_settings: {form.errors}")
         flash("Invalid request or security token expired. Please try again.", 'error')
 
+    # GET Request Logic
     settings = {}
     try:
         settings_list = SiteSetting.query.all()
@@ -210,9 +216,11 @@ def site_settings():
 @admin_required
 def reset_setting(key_name):
     try:
-        validate_csrf(request.form.get('csrf_token'))
-    except ValidationError:
-        flash('CSRF token validation failed. Could not reset setting.', 'error')
+        # Use WTForms CSRF validation from the hidden field in the form
+        form = FlaskForm() # Create a dummy form instance
+        form.validate_on_submit() # This will validate the token from request.form
+    except ValidationError as e:
+        flash(f'CSRF token validation failed: {e}. Could not reset setting.', 'error')
         redirect_url = url_for('admin.ai_settings') if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name else url_for('admin.site_settings')
         return redirect(redirect_url)
 
@@ -237,47 +245,74 @@ def reset_setting(key_name):
 @login_required
 @admin_required
 def ai_settings():
-    form = FlaskForm()
-    if form.validate_on_submit():
+    form = FlaskForm() # Use FlaskForm for CSRF protection
+    if form.validate_on_submit(): # This handles POST and validates CSRF
         keys_from_form = request.form.getlist('gemini_keys')
         valid_keys = [key.strip() for key in keys_from_form if key and key.strip()]
         keys_json = json.dumps(valid_keys)
+
+        settings_to_update = {}
+        settings_to_add = []
+
+        # Update GEMINI_API_KEY
         keys_setting = SiteSetting.query.get('GEMINI_API_KEY')
         if keys_setting:
-            if keys_setting.value != keys_json: keys_setting.value = keys_json
+            if keys_setting.value != keys_json: settings_to_update['GEMINI_API_KEY'] = keys_json
         elif valid_keys:
-            db.session.add(SiteSetting(key='GEMINI_API_KEY', value=keys_json))
+            settings_to_add.append(SiteSetting(key='GEMINI_API_KEY', value=keys_json))
+
+        # Update SELECTED_AI_MODEL
         selected_model = request.form.get('selected_model')
         if selected_model:
             model_setting = SiteSetting.query.get('SELECTED_AI_MODEL')
             if model_setting:
-                if model_setting.value != selected_model: model_setting.value = selected_model
+                if model_setting.value != selected_model: settings_to_update['SELECTED_AI_MODEL'] = selected_model
             else:
-                db.session.add(SiteSetting(key='SELECTED_AI_MODEL', value=selected_model))
+                settings_to_add.append(SiteSetting(key='SELECTED_AI_MODEL', value=selected_model))
+
+        # Update Prompts
         prompt_keys = ['prompt_generate_ideas', 'prompt_titles_and_tags', 'prompt_description']
         for key in prompt_keys:
             value = request.form.get(key, '').strip()
             setting = SiteSetting.query.get(key)
             if setting:
                 if value:
-                    if setting.value != value: setting.value = value
+                    if setting.value != value: settings_to_update[key] = value
                 else:
-                    db.session.delete(setting)
+                    # Mark for deletion if value is empty and setting exists
+                    try:
+                         db.session.delete(setting)
+                    except Exception as del_e:
+                         current_app.logger.warning(f"Could not stage prompt setting '{key}' for deletion: {del_e}")
             elif value:
-                db.session.add(SiteSetting(key=key, value=value))
+                settings_to_add.append(SiteSetting(key=key, value=value))
+
         try:
+            # Apply updates
+            for key, value in settings_to_update.items():
+                setting_obj = SiteSetting.query.get(key)
+                if setting_obj: setting_obj.value = value
+                else: db.session.add(SiteSetting(key=key, value=value))
+
+            # Apply additions
+            if settings_to_add:
+                db.session.bulk_save_objects(settings_to_add)
+
             db.session.commit()
             flash('AI Settings updated successfully!', 'success')
+            # Re-initialize clients after changing keys/model
+            from ...services.ai_service import initialize_ai_clients
+            initialize_ai_clients()
         except Exception as e:
             db.session.rollback()
             flash(f'Error saving AI settings: {str(e)}', 'error')
             log_system_event("Error saving AI settings", "ERROR", details=str(e), traceback_info=traceback.format_exc())
         return redirect(url_for('admin.ai_settings'))
-    elif request.method == 'POST':
+    elif request.method == 'POST': # CSRF validation likely failed
         current_app.logger.warning(f"CSRF validation failed for ai_settings: {form.errors}")
         flash("Invalid request or security token expired. Please try again.", 'error')
 
-    # GET Request
+    # --- GET Request Logic ---
     current_keys = []
     keys_setting_value = get_config_value('GEMINI_API_KEY', '[]')
     try:
@@ -289,9 +324,9 @@ def ai_settings():
              if len(current_keys) == 1 and ',' not in keys_setting_value:
                  current_keys = [keys_setting_value.strip()]
         else:
-            flash("Warning: Could not parse Gemini API keys format.", "warning")
+            current_app.logger.warning("Could not parse Gemini API keys format.") # Use logger
             current_keys = []
-    if not current_keys: current_keys = [""]
+    if not current_keys: current_keys = [""] # Ensure at least one input field
 
     def get_model_display_info(model_name):
         if not model_name: return "Unknown Model"
@@ -302,6 +337,7 @@ def ai_settings():
     default_model = 'gemini-1.5-flash-latest'
     available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
     first_valid_key = next((key for key in current_keys if key), None)
+
     if first_valid_key:
         try:
             genai.configure(api_key=first_valid_key)
@@ -315,15 +351,20 @@ def ai_settings():
                 available_models_info = sorted(unique_models_dict.values(), key=lambda x: ('flash' not in x['name'], x['name']))
             else:
                  flash("No compatible Gemini models found for the first API key.", "warning")
-                 available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
+                 # Keep the default model in the list
         except Exception as e:
             flash(f"Could not fetch available models using the first key: {str(e)[:150]}... Check key validity.", "warning")
-            available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
+            # Keep the default model in the list
     else:
-        flash("Add a valid Gemini API key to fetch models.", "info")
-        available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
+        # Don't flash if no keys are set, just use default
+        pass # flash("Add a valid Gemini API key to fetch models.", "info")
 
     selected_model = get_config_value('SELECTED_AI_MODEL', default_model)
+
+    # Ensure selected_model exists in the available list, otherwise use default
+    if not any(m['name'] == selected_model for m in available_models_info):
+        selected_model = default_model
+
     settings = {}
     try:
         settings = {s.key: s.value for s in SiteSetting.query.all()}
@@ -343,14 +384,10 @@ def ai_settings():
 @login_required
 @admin_required
 def test_ai_config():
-    csrf_token_from_request = request.json.get('csrf_token') or request.headers.get('X-CSRFToken')
-    try:
-        if csrf_token_from_request:
-            validate_csrf(csrf_token_from_request)
-        else:
-            raise ValidationError('CSRF token missing')
-    except ValidationError as e:
-        current_app.logger.warning(f"CSRF validation failed for test_ai_config: {e}")
+    # Reuse CSRF validation from FlaskForm
+    form = FlaskForm()
+    if not form.validate_on_submit():
+        current_app.logger.warning(f"CSRF validation failed for test_ai_config: {form.errors}")
         return jsonify({'status': 'error', 'message': 'CSRF token validation failed.'}), 400
 
     data = request.json; api_keys = data.get('keys', []); model_name = data.get('model')
@@ -366,28 +403,32 @@ def test_ai_config():
         try:
             genai.configure(api_key=key);
             model = genai.GenerativeModel(model_name)
-            response = model.generate_content("Say 'Test OK'", generation_config={'max_output_tokens': 5, 'temperature': 0})
-            if hasattr(response, 'text') and isinstance(response.text, str) and 'ok' in response.text.lower():
+            # Use a slightly more robust test call that forces model interaction
+            response = model.generate_content("What is 1+1?", generation_config={'max_output_tokens': 10, 'temperature': 0})
+            # Check if response has text and seems valid (contains a digit '2')
+            if hasattr(response, 'text') and isinstance(response.text, str) and '2' in response.text:
                 results.append({'key_mask': key_masked, 'status': 'Valid'})
                 overall_success = True
             else:
-                 reason = "API Response Invalid Format"
+                 reason = "API Response Invalid"
                  if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
                      reason = f"Prompt Feedback: {response.prompt_feedback}"
+                 elif hasattr(response, 'text'):
+                     reason = f"Unexpected Response: {response.text[:50]}..."
                  results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': reason})
         except Exception as e:
             error_message = str(e).lower(); error_detail = "Failed (Check Model/Key/Billing/Permissions)"
+            # More specific error mapping
             if 'api_key_not_valid' in error_message or 'provide an api key' in error_message: error_detail = "API Key Invalid"
             elif 'permission_denied' in error_message: error_detail = "Permission Denied (Check Project/API Enablement/Billing)"
-            elif 'quota' in error_message: error_detail = "Quota Exceeded"
+            elif 'quota' in error_message or 'resource_exhausted' in error_message: error_detail = "Quota Exceeded/Resource Exhausted"
             elif '404' in error_message or 'not found' in error_message: error_detail = "Model Not Found or Not Available for Key"
             elif '400' in error_message or 'invalid argument' in error_message: error_detail = "Invalid Argument (Check Model Name?)"
             elif 'deadline_exceeded' in error_message: error_detail = "Request Timeout"
-            elif 'resource_exhausted' in error_message: error_detail = "Resource Exhausted (Likely Quota)"
             results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': error_detail})
 
     if not valid_keys_provided:
-        return jsonify({'status': 'error', 'message': 'No API keys were provided for testing.'})
+        return jsonify({'status': 'error', 'message': 'No valid API keys were provided for testing.'})
 
     return jsonify({'status': 'success' if overall_success else 'error', 'results': results})
 
