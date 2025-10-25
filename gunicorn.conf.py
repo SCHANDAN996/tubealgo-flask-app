@@ -1,8 +1,10 @@
 # gunicorn.conf.py
 import multiprocessing
 
+# Use eventlet instead of gevent
+worker_class = 'eventlet'
+
 # Worker configuration
-worker_class = 'gevent'
 workers = 1
 worker_connections = 1000
 
