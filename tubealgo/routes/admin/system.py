@@ -200,7 +200,12 @@ def site_settings():
     }
     for key, default_value in default_settings.items():
         settings.setdefault(key, default_value)
-    return render_template('admin/site_settings.html', settings=settings, mask_key=mask_api_key, form=form)
+    
+    # *** CRITICAL FIX: Pass mask_api_key function to template ***
+    return render_template('admin/site_settings.html', 
+                          settings=settings, 
+                          mask_key=mask_api_key,  # Pass function here
+                          form=form)
 
 
 @admin_bp.route('/settings/reset/<string:key_name>', methods=['POST'])
