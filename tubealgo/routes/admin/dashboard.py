@@ -5,7 +5,7 @@ from flask_login import login_required
 from . import admin_bp
 from ... import db
 from ...decorators import admin_required
-from ...models import User, APIKeyStatus, get_config_value, db
+from ...models import User, APIKeyStatus, get_config_value
 from sqlalchemy import func
 from datetime import date, datetime
 import pytz
@@ -48,8 +48,6 @@ def dashboard():
     
     exhausted_today_count = sum(1 for status in key_status_map.values() if status.status == 'exhausted')
 
-    # --- FIX IS HERE ---
-    # The template path is now correctly pointing to the admin dashboard
     return render_template('admin/dashboard.html', 
                            total_users=total_users,
                            subscribed_users=subscribed_users,
