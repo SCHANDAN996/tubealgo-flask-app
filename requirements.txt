@@ -22,9 +22,10 @@ pytz
 cashfree-pg
 google-generativeai
 celery
-redis==5.0.1
+redis
 youtube-transcript-api
 pytrends
 numpy
 Flask-SSE
 blinker
+weasyprint
