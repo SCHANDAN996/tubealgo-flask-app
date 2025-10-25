@@ -31,22 +31,20 @@ def mask_api_key(key_name):
             loaded_keys = json.loads(key_value)
             if isinstance(loaded_keys, list):
                 keys_list = [k.strip() for k in loaded_keys if isinstance(k, str) and k.strip()]
-        # <<< FIX: Indentation corrected here >>>
         except (json.JSONDecodeError, TypeError):
             # Fallback for comma-separated or plain string
-            [cite_start]if isinstance(key_value, str): # [cite: 1626]
+            if isinstance(key_value, str):
                 keys_list = [k.strip() for k in key_value.split(',') if k.strip()]
                 # If splitting by comma gives one item, treat it as a single key if no comma was present
-                [cite_start]if len(keys_list) == 1 and ',' not in key_value: # [cite: 1627]
+                if len(keys_list) == 1 and ',' not in key_value:
                     keys_list = [key_value.strip()] # Treat as single key
-            # <<< END FIX >>>
 
         if keys_list:
              first_key = keys_list[0]
              masked_first = f"{first_key[:4]}...{first_key[-4:]}" if len(first_key) > 8 else "Short Key"
              return f"~{len(keys_list)} keys set (e.g., {masked_first})"
         else:
-             [cite_start]if key_value and isinstance(key_value, str) and key_value.strip(): # [cite: 1628]
+             if key_value and isinstance(key_value, str) and key_value.strip():
                  return "Set (Invalid Format)"
              else:
                  return "Not Set or Empty"
@@ -57,7 +55,7 @@ def mask_api_key(key_name):
     elif isinstance(key_value, str) and key_value:
         return "Set (Short Key)"
     else:
-        [cite_start]if key_value: # [cite: 1629]
+        if key_value:
              return "Set (Invalid Format)"
         else:
              return "Not Set or Empty"
@@ -74,11 +72,11 @@ def system_logs():
     try:
         logs_pagination = SystemLog.query.order_by(SystemLog.timestamp.desc()).paginate(page=page, per_page=25, error_out=False)
     except (exc.OperationalError, exc.ProgrammingError) as e:
-        [cite_start]flash("Could not load system logs. Database table might be missing.", "error") # [cite: 1630]
-        [cite_start]log_system_event("Failed to query SystemLog table", "ERROR", details=str(e)) # [cite: 1630]
-        [cite_start]db.session.rollback() # [cite: 1630]
+        flash("Could not load system logs. Database table might be missing.", "error")
+        log_system_event("Failed to query SystemLog table", "ERROR", details=str(e))
+        db.session.rollback()
         from flask_sqlalchemy.pagination import Pagination
-        [cite_start]logs_pagination = Pagination(None, page, 25, 0, []) # [cite: 1630]
+        logs_pagination = Pagination(None, page, 25, 0, [])
     return render_template('admin/system_logs.html', logs=logs_pagination)
 
 
@@ -90,9 +88,9 @@ def cache_management():
     try:
         cache_items = ApiCache.query.order_by(ApiCache.expires_at.desc()).all()
     except (exc.OperationalError, exc.ProgrammingError) as e:
-        [cite_start]flash("Could not load cache items. Database table might be missing.", "error") # [cite: 1631]
-        [cite_start]log_system_event("Failed to query ApiCache table", "ERROR", details=str(e)) # [cite: 1631]
-        [cite_start]db.session.rollback() # [cite: 1631]
+        flash("Could not load cache items. Database table might be missing.", "error")
+        log_system_event("Failed to query ApiCache table", "ERROR", details=str(e))
+        db.session.rollback()
     form = CSRFOnlyForm()
     return render_template('admin/cache_management.html', cache_items=cache_items, form=form)
 
@@ -108,12 +106,12 @@ def clear_cache():
             db.session.commit()
             flash(f'Successfully cleared {num_rows_deleted} cache entries.', 'success')
         except Exception as e:
-            [cite_start]db.session.rollback() # [cite: 1632]
-            [cite_start]flash(f'Error clearing cache: {e}', 'error') # [cite: 1632]
-            [cite_start]log_system_event("Error clearing cache", "ERROR", details=str(e)) # [cite: 1632]
+            db.session.rollback()
+            flash(f'Error clearing cache: {e}', 'error')
+            log_system_event("Error clearing cache", "ERROR", details=str(e))
     else:
-        [cite_start]current_app.logger.warning(f"CSRF validation failed for clear_cache: {form.errors}") # [cite: 1632]
-        [cite_start]flash("Invalid request or security token expired.", 'error') # [cite: 1632]
+        current_app.logger.warning(f"CSRF validation failed for clear_cache: {form.errors}")
+        flash("Invalid request or security token expired.", 'error')
     return redirect(url_for('admin.cache_management'))
 
 @admin_bp.route('/settings', methods=['GET', 'POST'])
@@ -125,7 +123,7 @@ def site_settings():
         form_data = request.form.to_dict()
         feature_flags = ['feature_referral_system', 'feature_video_upload']
         for flag in feature_flags:
-            [cite_start]form_data[flag] = 'True' if flag in form_data else 'False' # [cite: 1633]
+            form_data[flag] = 'True' if flag in form_data else 'False'
         bulk_edit_keys = ['bulk_edit_limit_free', 'bulk_edit_limit_creator', 'bulk_edit_limit_pro']
         for key in bulk_edit_keys:
             value_str = form_data.get(key, '0')
@@ -133,33 +131,33 @@ def site_settings():
             try:
                 value_int = int(value_str)
                 value_int = 0 if value_int < -1 else value_int
-            [cite_start]except (ValueError, TypeError): # [cite: 1634]
+            except (ValueError, TypeError):
                 default_val = -1 if 'pro' in key else (20 if 'creator' in key else 0)
                 value_int = default_val
-                [cite_start]flash(f"Invalid value for {key.replace('_', ' ').title()}. Using default: {'Unlimited' if default_val == -1 else default_val}", 'warning') # [cite: 1634]
+                flash(f"Invalid value for {key.replace('_', ' ').title()}. Using default: {'Unlimited' if default_val == -1 else default_val}", 'warning')
             form_data[key] = str(value_int)
-        [cite_start]secret_keys = ['OPENAI_API_KEY', 'YOUTUBE_API_KEYS', 'TELEGRAM_BOT_TOKEN', # [cite: 1635]
-                       [cite_start]'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', # [cite: 1635]
-                       [cite_start]'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', # [cite: 1635]
-                       [cite_start]'CASHFREE_APP_ID', 'CASHFREE_SECRET_KEY'] # [cite: 1635]
+        secret_keys = ['OPENAI_API_KEY', 'YOUTUBE_API_KEYS', 'TELEGRAM_BOT_TOKEN',
+                       'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET',
+                       'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+                       'CASHFREE_APP_ID', 'CASHFREE_SECRET_KEY']
         settings_to_update = {}
         settings_to_add = []
         for key, value in form_data.items():
-            [cite_start]if key == 'csrf_token': continue # [cite: 1636]
-            [cite_start]setting = None # [cite: 1636]
+            if key == 'csrf_token': continue
+            setting = None
             try:
                 setting = SiteSetting.query.get(key)
             except (exc.OperationalError, exc.ProgrammingError) as e:
-                 [cite_start]flash("Error accessing settings table. Cannot save.", "error") # [cite: 1636]
-                 [cite_start]log_system_event("Error accessing SiteSetting table on save", "ERROR", details=str(e)) # [cite: 1636]
-                 [cite_start]db.session.rollback() # [cite: 1637]
-                 [cite_start]return redirect(url_for('admin.site_settings')) # [cite: 1637]
+                 flash("Error accessing settings table. Cannot save.", "error")
+                 log_system_event("Error accessing SiteSetting table on save", "ERROR", details=str(e))
+                 db.session.rollback()
+                 return redirect(url_for('admin.site_settings'))
             is_secret = key in secret_keys
             if is_secret and key in form_data and not value.strip():
                  continue
             if setting:
-                 [cite_start]if setting.value != value: # [cite: 1638]
-                      [cite_start]settings_to_update[key] = value # [cite: 1638]
+                 if setting.value != value:
+                      settings_to_update[key] = value
             elif value.strip() or not is_secret:
                 settings_to_add.append(SiteSetting(key=key, value=value))
         try:
@@ -167,29 +165,29 @@ def site_settings():
                 db.session.merge(SiteSetting(key=key, value=value))
             if settings_to_add:
                 db.session.bulk_save_objects(settings_to_add)
-            [cite_start]db.session.commit() # [cite: 1639]
-            [cite_start]flash('Site settings updated successfully!', 'success') # [cite: 1639]
+            db.session.commit()
+            flash('Site settings updated successfully!', 'success')
         except Exception as e:
-            [cite_start]db.session.rollback() # [cite: 1639]
-            [cite_start]flash(f'Error saving settings: {str(e)}', 'error') # [cite: 1639]
-            [cite_start]log_system_event("Error saving site settings", "ERROR", details=str(e), traceback_info=traceback.format_exc()) # [cite: 1639]
+            db.session.rollback()
+            flash(f'Error saving settings: {str(e)}', 'error')
+            log_system_event("Error saving site settings", "ERROR", details=str(e), traceback_info=traceback.format_exc())
         return redirect(url_for('admin.site_settings'))
     elif request.method == 'POST':
-        [cite_start]current_app.logger.warning(f"CSRF validation failed for site_settings: {form.errors}") # [cite: 1640]
-        [cite_start]flash("Invalid request or security token expired. Please try again.", 'error') # [cite: 1640]
+        current_app.logger.warning(f"CSRF validation failed for site_settings: {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     settings = {}
     try:
         settings_list = SiteSetting.query.all()
         settings = {s.key: s.value for s in settings_list}
     except (exc.OperationalError, exc.ProgrammingError) as e:
-         [cite_start]flash("Could not load settings from database. Table might be missing.", "warning") # [cite: 1641]
-         [cite_start]log_system_event("Failed to load SiteSetting table", "WARNING", details=str(e)) # [cite: 1641]
-         [cite_start]db.session.rollback() # [cite: 1641]
+         flash("Could not load settings from database. Table might be missing.", "warning")
+         log_system_event("Failed to load SiteSetting table", "WARNING", details=str(e))
+         db.session.rollback()
     except Exception as e:
-         [cite_start]flash(f"An unexpected error occurred loading settings: {e}", "error") # [cite: 1641]
-         [cite_start]log_system_event("Unexpected error loading SiteSetting", "ERROR", details=str(e)) # [cite: 1641]
-         [cite_start]db.session.rollback() # [cite: 1641]
+         flash(f"An unexpected error occurred loading settings: {e}", "error")
+         log_system_event("Unexpected error loading SiteSetting", "ERROR", details=str(e))
+         db.session.rollback()
     default_settings = {
         'ADMIN_TELEGRAM_CHAT_ID': '',
         'bulk_edit_limit_free': '0',
@@ -202,8 +200,8 @@ def site_settings():
         'seo_home_title': '',
         'seo_home_description': '',
     }
-    [cite_start]for key, default_value in default_settings.items(): # [cite: 1642]
-        [cite_start]settings.setdefault(key, default_value) # [cite: 1642]
+    for key, default_value in default_settings.items():
+        settings.setdefault(key, default_value)
     return render_template('admin/site_settings.html', settings=settings, mask_key=mask_api_key, form=form)
 
 
@@ -221,17 +219,17 @@ def reset_setting(key_name):
     setting = SiteSetting.query.get(key_name)
     if setting:
         try:
-            [cite_start]db.session.delete(setting) # [cite: 1643]
-            [cite_start]db.session.commit() # [cite: 1643]
-            [cite_start]flash(f"Setting '{key_name}' removed from database. Using default.", 'success') # [cite: 1643]
+            db.session.delete(setting)
+            db.session.commit()
+            flash(f"Setting '{key_name}' removed from database. Using default.", 'success')
         except Exception as e:
-            [cite_start]db.session.rollback() # [cite: 1643]
-            [cite_start]flash(f"Error resetting setting '{key_name}': {str(e)}", 'error') # [cite: 1643]
-            [cite_start]log_system_event(f"Error resetting setting {key_name}", "ERROR", details=str(e)) # [cite: 1643]
+            db.session.rollback()
+            flash(f"Error resetting setting '{key_name}': {str(e)}", 'error')
+            log_system_event(f"Error resetting setting {key_name}", "ERROR", details=str(e))
     else:
         flash(f"Setting '{key_name}' not found in DB (already default).", 'info')
 
-    [cite_start]redirect_url = url_for('admin.ai_settings') if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name else url_for('admin.site_settings') # [cite: 1644]
+    redirect_url = url_for('admin.ai_settings') if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name else url_for('admin.site_settings')
     return redirect(redirect_url)
 
 
@@ -249,7 +247,7 @@ def ai_settings():
             if keys_setting.value != keys_json: keys_setting.value = keys_json
         elif valid_keys:
             db.session.add(SiteSetting(key='GEMINI_API_KEY', value=keys_json))
-        [cite_start]selected_model = request.form.get('selected_model') # [cite: 1645]
+        selected_model = request.form.get('selected_model')
         if selected_model:
             model_setting = SiteSetting.query.get('SELECTED_AI_MODEL')
             if model_setting:
@@ -258,26 +256,26 @@ def ai_settings():
                 db.session.add(SiteSetting(key='SELECTED_AI_MODEL', value=selected_model))
         prompt_keys = ['prompt_generate_ideas', 'prompt_titles_and_tags', 'prompt_description']
         for key in prompt_keys:
-            [cite_start]value = request.form.get(key, '').strip() # [cite: 1646]
+            value = request.form.get(key, '').strip()
             setting = SiteSetting.query.get(key)
             if setting:
                 if value:
                     if setting.value != value: setting.value = value
                 else:
-                    [cite_start]db.session.delete(setting) # [cite: 1647]
-            [cite_start]elif value: # [cite: 1647]
-                [cite_start]db.session.add(SiteSetting(key=key, value=value)) # [cite: 1647]
+                    db.session.delete(setting)
+            elif value:
+                db.session.add(SiteSetting(key=key, value=value))
         try:
             db.session.commit()
             flash('AI Settings updated successfully!', 'success')
         except Exception as e:
-            [cite_start]db.session.rollback() # [cite: 1648]
-            [cite_start]flash(f'Error saving AI settings: {str(e)}', 'error') # [cite: 1648]
-            [cite_start]log_system_event("Error saving AI settings", "ERROR", details=str(e), traceback_info=traceback.format_exc()) # [cite: 1648]
+            db.session.rollback()
+            flash(f'Error saving AI settings: {str(e)}', 'error')
+            log_system_event("Error saving AI settings", "ERROR", details=str(e), traceback_info=traceback.format_exc())
         return redirect(url_for('admin.ai_settings'))
     elif request.method == 'POST':
-        [cite_start]current_app.logger.warning(f"CSRF validation failed for ai_settings: {form.errors}") # [cite: 1648]
-        [cite_start]flash("Invalid request or security token expired. Please try again.", 'error') # [cite: 1648]
+        current_app.logger.warning(f"CSRF validation failed for ai_settings: {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     # GET Request
     current_keys = []
@@ -285,21 +283,21 @@ def ai_settings():
     try:
         loaded_keys = json.loads(keys_setting_value)
         if isinstance(loaded_keys, list): current_keys = [k for k in loaded_keys if isinstance(k, str) and k.strip()]
-    [cite_start]except (json.JSONDecodeError, TypeError): # [cite: 1649]
-        [cite_start]if isinstance(keys_setting_value, str) and keys_setting_value.strip(): # [cite: 1649]
-             [cite_start]current_keys = [k.strip() for k in keys_setting_value.split(',') if k.strip()] # [cite: 1649]
-             [cite_start]if len(current_keys) == 1 and ',' not in keys_setting_value: # [cite: 1649]
-                 [cite_start]current_keys = [keys_setting_value.strip()] # [cite: 1649]
+    except (json.JSONDecodeError, TypeError):
+        if isinstance(keys_setting_value, str) and keys_setting_value.strip():
+             current_keys = [k.strip() for k in keys_setting_value.split(',') if k.strip()]
+             if len(current_keys) == 1 and ',' not in keys_setting_value:
+                 current_keys = [keys_setting_value.strip()]
         else:
             flash("Warning: Could not parse Gemini API keys format.", "warning")
             current_keys = []
     if not current_keys: current_keys = [""]
 
     def get_model_display_info(model_name):
-        [cite_start]if not model_name: return "Unknown Model" # [cite: 1650]
-        [cite_start]if "flash" in model_name: return "Fast & cost-effective" # [cite: 1650]
-        [cite_start]if "pro" in model_name: return "Powerful & versatile" # [cite: 1650]
-        [cite_start]return "General model" # [cite: 1650]
+        if not model_name: return "Unknown Model"
+        if "flash" in model_name: return "Fast & cost-effective"
+        if "pro" in model_name: return "Powerful & versatile"
+        return "General model"
 
     default_model = 'gemini-1.5-flash-latest'
     available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
@@ -308,22 +306,22 @@ def ai_settings():
         try:
             genai.configure(api_key=first_valid_key)
             fetched_models = []
-            [cite_start]for m in genai.list_models(): # [cite: 1651]
-                [cite_start]if 'generateContent' in m.supported_generation_methods: # [cite: 1651]
-                    [cite_start]model_name = m.name.replace('models/', '') # [cite: 1651]
-                    [cite_start]fetched_models.append({'name': model_name, 'display': get_model_display_info(model_name)}) # [cite: 1651]
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    model_name = m.name.replace('models/', '')
+                    fetched_models.append({'name': model_name, 'display': get_model_display_info(model_name)})
             if fetched_models:
                 unique_models_dict = {d['name']: d for d in fetched_models}
-                [cite_start]available_models_info = sorted(unique_models_dict.values(), key=lambda x: ('flash' not in x['name'], x['name'])) # [cite: 1652]
+                available_models_info = sorted(unique_models_dict.values(), key=lambda x: ('flash' not in x['name'], x['name']))
             else:
-                 [cite_start]flash("No compatible Gemini models found for the first API key.", "warning") # [cite: 1652]
-                 [cite_start]available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}] # [cite: 1652]
+                 flash("No compatible Gemini models found for the first API key.", "warning")
+                 available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
         except Exception as e:
-            [cite_start]flash(f"Could not fetch available models using the first key: {str(e)[:150]}... Check key validity.", "warning") # [cite: 1653]
-            [cite_start]available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}] # [cite: 1653]
+            flash(f"Could not fetch available models using the first key: {str(e)[:150]}... Check key validity.", "warning")
+            available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
     else:
-        [cite_start]flash("Add a valid Gemini API key to fetch models.", "info") # [cite: 1653]
-        [cite_start]available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}] # [cite: 1653]
+        flash("Add a valid Gemini API key to fetch models.", "info")
+        available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
 
     selected_model = get_config_value('SELECTED_AI_MODEL', default_model)
     settings = {}
@@ -333,12 +331,12 @@ def ai_settings():
         flash("Could not load prompt settings from database.", "warning")
         db.session.rollback()
 
-    [cite_start]return render_template('admin/ai_settings.html', # [cite: 1654]
-                           [cite_start]current_keys=current_keys, # [cite: 1654]
-                           [cite_start]available_models_info=available_models_info, # [cite: 1654]
-                           [cite_start]selected_model=selected_model, # [cite: 1654]
-                           [cite_start]settings=settings, # [cite: 1654]
-                           [cite_start]form=form) # Pass form instance # [cite: 1655]
+    return render_template('admin/ai_settings.html',
+                           current_keys=current_keys,
+                           available_models_info=available_models_info,
+                           selected_model=selected_model,
+                           settings=settings,
+                           form=form) # Pass form instance
 
 
 @admin_bp.route('/api/test-ai-config', methods=['POST'])
@@ -355,11 +353,11 @@ def test_ai_config():
         current_app.logger.warning(f"CSRF validation failed for test_ai_config: {e}")
         return jsonify({'status': 'error', 'message': 'CSRF token validation failed.'}), 400
 
-    [cite_start]data = request.json; api_keys = data.get('keys', []); model_name = data.get('model') # [cite: 1656]
-    [cite_start]if not model_name: return jsonify({'status': 'error', 'message': 'Model name required.'}), 400 # [cite: 1656]
-    [cite_start]if not isinstance(api_keys, list): return jsonify({'status': 'error', 'message': 'Keys must be a list.'}), 400 # [cite: 1656]
+    data = request.json; api_keys = data.get('keys', []); model_name = data.get('model')
+    if not model_name: return jsonify({'status': 'error', 'message': 'Model name required.'}), 400
+    if not isinstance(api_keys, list): return jsonify({'status': 'error', 'message': 'Keys must be a list.'}), 400
 
-    [cite_start]results = []; overall_success = False; valid_keys_provided = False # [cite: 1656]
+    results = []; overall_success = False; valid_keys_provided = False
     for key in api_keys:
         key = key.strip();
         if not key: continue;
@@ -368,25 +366,25 @@ def test_ai_config():
         try:
             genai.configure(api_key=key);
             model = genai.GenerativeModel(model_name)
-            [cite_start]response = model.generate_content("Say 'Test OK'", generation_config={'max_output_tokens': 5, 'temperature': 0}) # [cite: 1657]
-            [cite_start]if hasattr(response, 'text') and isinstance(response.text, str) and 'ok' in response.text.lower(): # [cite: 1657]
-                [cite_start]results.append({'key_mask': key_masked, 'status': 'Valid'}) # [cite: 1657]
-                [cite_start]overall_success = True # [cite: 1657]
+            response = model.generate_content("Say 'Test OK'", generation_config={'max_output_tokens': 5, 'temperature': 0})
+            if hasattr(response, 'text') and isinstance(response.text, str) and 'ok' in response.text.lower():
+                results.append({'key_mask': key_masked, 'status': 'Valid'})
+                overall_success = True
             else:
                  reason = "API Response Invalid Format"
-                 [cite_start]if hasattr(response, 'prompt_feedback') and response.prompt_feedback: # [cite: 1658]
-                     [cite_start]reason = f"Prompt Feedback: {response.prompt_feedback}" # [cite: 1658]
-                 [cite_start]results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': reason}) # [cite: 1658]
+                 if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                     reason = f"Prompt Feedback: {response.prompt_feedback}"
+                 results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': reason})
         except Exception as e:
-            [cite_start]error_message = str(e).lower(); error_detail = "Failed (Check Model/Key/Billing/Permissions)" # [cite: 1659]
-            [cite_start]if 'api_key_not_valid' in error_message or 'provide an api key' in error_message: error_detail = "API Key Invalid" # [cite: 1659]
-            [cite_start]elif 'permission_denied' in error_message: error_detail = "Permission Denied (Check Project/API Enablement/Billing)" # [cite: 1659]
-            [cite_start]elif 'quota' in error_message: error_detail = "Quota Exceeded" # [cite: 1659]
-            [cite_start]elif '404' in error_message or 'not found' in error_message: error_detail = "Model Not Found or Not Available for Key" # [cite: 1659]
-            [cite_start]elif '400' in error_message or 'invalid argument' in error_message: error_detail = "Invalid Argument (Check Model Name?)" # [cite: 1659]
-            [cite_start]elif 'deadline_exceeded' in error_message: error_detail = "Request Timeout" # [cite: 1659]
-            [cite_start]elif 'resource_exhausted' in error_message: error_detail = "Resource Exhausted (Likely Quota)" # [cite: 1660]
-            [cite_start]results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': error_detail}) # [cite: 1660]
+            error_message = str(e).lower(); error_detail = "Failed (Check Model/Key/Billing/Permissions)"
+            if 'api_key_not_valid' in error_message or 'provide an api key' in error_message: error_detail = "API Key Invalid"
+            elif 'permission_denied' in error_message: error_detail = "Permission Denied (Check Project/API Enablement/Billing)"
+            elif 'quota' in error_message: error_detail = "Quota Exceeded"
+            elif '404' in error_message or 'not found' in error_message: error_detail = "Model Not Found or Not Available for Key"
+            elif '400' in error_message or 'invalid argument' in error_message: error_detail = "Invalid Argument (Check Model Name?)"
+            elif 'deadline_exceeded' in error_message: error_detail = "Request Timeout"
+            elif 'resource_exhausted' in error_message: error_detail = "Resource Exhausted (Likely Quota)"
+            results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': error_detail})
 
     if not valid_keys_provided:
         return jsonify({'status': 'error', 'message': 'No API keys were provided for testing.'})
@@ -404,21 +402,21 @@ def user_growth_data():
         user_counts_query = db.session.query(
             func.count(User.id), cast(User.created_at, Date)
         ).filter(
-            [cite_start]User.created_at >= thirty_days_ago_dt # [cite: 1661]
-        [cite_start]).group_by( # [cite: 1661]
-            [cite_start]cast(User.created_at, Date) # [cite: 1661]
-        [cite_start]).order_by( # [cite: 1661]
-            [cite_start]cast(User.created_at, Date) # [cite: 1661]
-        [cite_start]).all() # [cite: 1661]
+            User.created_at >= thirty_days_ago_dt
+        ).group_by(
+            cast(User.created_at, Date)
+        ).order_by(
+            cast(User.created_at, Date)
+        ).all()
         user_counts = {day_date: count for count, day_date in user_counts_query}
     except (exc.OperationalError, exc.ProgrammingError) as e:
-        [cite_start]log_system_event("Error fetching user growth data", "ERROR", details=str(e), traceback_info=traceback.format_exc()) # [cite: 1661]
-        [cite_start]db.session.rollback() # [cite: 1661]
-        [cite_start]user_counts = {} # [cite: 1661]
+        log_system_event("Error fetching user growth data", "ERROR", details=str(e), traceback_info=traceback.format_exc())
+        db.session.rollback()
+        user_counts = {}
     except Exception as e:
-        [cite_start]log_system_event("Unexpected error in user_growth_data", "ERROR", details=str(e), traceback_info=traceback.format_exc()) # [cite: 1662]
-        [cite_start]db.session.rollback() # [cite: 1662]
-        [cite_start]user_counts = {} # [cite: 1662]
+        log_system_event("Unexpected error in user_growth_data", "ERROR", details=str(e), traceback_info=traceback.format_exc())
+        db.session.rollback()
+        user_counts = {}
 
     labels = []
     data = []
@@ -437,18 +435,18 @@ def plan_distribution_data():
     try:
         plan_counts = db.session.query(
             User.subscription_plan,
-            [cite_start]func.count(User.id) # [cite: 1663]
-        [cite_start]).group_by(User.subscription_plan).all() # [cite: 1663]
-        [cite_start]plan_data = {plan: count for plan, count in plan_counts} # [cite: 1663]
+            func.count(User.id)
+        ).group_by(User.subscription_plan).all()
+        plan_data = {plan: count for plan, count in plan_counts}
     except (exc.OperationalError, exc.ProgrammingError) as e:
-        [cite_start]log_system_event("Error fetching plan distribution data", "ERROR", details=str(e)) # [cite: 1663]
-        [cite_start]db.session.rollback() # [cite: 1663]
-        [cite_start]plan_data = {} # [cite: 1663]
+        log_system_event("Error fetching plan distribution data", "ERROR", details=str(e))
+        db.session.rollback()
+        plan_data = {}
     except Exception as e:
-        [cite_start]log_system_event("Unexpected error in plan_distribution_data", "ERROR", details=str(e)) # [cite: 1663]
-        [cite_start]db.session.rollback() # [cite: 1663]
-        [cite_start]plan_data = {} # [cite: 1663]
+        log_system_event("Unexpected error in plan_distribution_data", "ERROR", details=str(e))
+        db.session.rollback()
+        plan_data = {}
 
     labels = ['Free', 'Creator', 'Pro']
-    [cite_start]data = [plan_data.get('free', 0), plan_data.get('creator', 0), plan_data.get('pro', 0)] # [cite: 1664]
+    data = [plan_data.get('free', 0), plan_data.get('creator', 0), plan_data.get('pro', 0)]
     return jsonify({'labels': labels, 'data': data})
