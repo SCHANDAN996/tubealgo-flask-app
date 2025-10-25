@@ -38,24 +38,22 @@ def mask_api_key(key_name):
                     keys_list = [key_value.strip()]
 
         if keys_list:
-             first_key = keys_list[0]
-             masked_first = f"{first_key[:4]}...{first_key[-4:]}" if len(first_key) > 8 else "Short Key"
-             return f"~{len(keys_list)} keys set (e.g., {masked_first})"
+            first_key = keys_list[0]
+            masked_first = f"{first_key[:4]}...{first_key[-4:]}" if len(first_key) > 8 else "****"
+            return f"{len(keys_list)} key(s) configured"
         else:
-             if key_value and isinstance(key_value, str) and key_value.strip():
-                 return "Set (Invalid Format)"
-             else:
-                 return "Not Set or Empty"
+            if key_value and isinstance(key_value, str) and key_value.strip():
+                return "Invalid Format"
+            else:
+                return "Not Set"
 
+    # For single keys
     if isinstance(key_value, str) and len(key_value) > 8:
         return f"{key_value[:4]}...{key_value[-4:]}"
     elif isinstance(key_value, str) and key_value:
-        return "Set (Short Key)"
+        return "****"
     else:
-        if key_value:
-             return "Set (Invalid Format)"
-        else:
-             return "Not Set or Empty"
+        return "Not Set"
 
 @admin_bp.route('/logs')
 @login_required
@@ -201,10 +199,9 @@ def site_settings():
     for key, default_value in default_settings.items():
         settings.setdefault(key, default_value)
     
-    # *** CRITICAL FIX: Pass mask_api_key function to template ***
     return render_template('admin/site_settings.html', 
                           settings=settings, 
-                          mask_key=mask_api_key,  # Pass function here
+                          mask_key=mask_api_key,
                           form=form)
 
 
@@ -382,7 +379,7 @@ def test_ai_config():
         key = key.strip();
         if not key: continue;
         valid_keys_provided = True
-        key_masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "Short Key"
+        key_masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "****"
         try:
             genai.configure(api_key=key);
             model = genai.GenerativeModel(model_name)
