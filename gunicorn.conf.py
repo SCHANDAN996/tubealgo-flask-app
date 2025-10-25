@@ -1,19 +1,30 @@
 # gunicorn.conf.py
 import multiprocessing
 
-# वर्कर क्लास को gevent पर सेट करें
+# Worker configuration
 worker_class = 'gevent'
-
-# वर्कर की संख्या (Render Free टियर के लिए 1 ठीक है)
 workers = 1
+worker_connections = 1000
 
-# ऐप कहाँ बाइंड करना है (Render इसे अनदेखा करेगा और अपने पोर्ट का उपयोग करेगा)
-bind = '0.0.0.0:10000' # Render आमतौर पर पोर्ट 10000 का उपयोग करता है
+# Bind address
+bind = '0.0.0.0:10000'
 
-# लॉगिंग
+# Timeouts
+timeout = 120
+graceful_timeout = 60
+keepalive = 5
+
+# Logging
 loglevel = 'info'
-accesslog = '-' # stdout पर लॉग करें
-errorlog = '-'  # stderr पर लॉग करें
+accesslog = '-'
+errorlog = '-'
 
-# ग्रेसफुल शटडाउन टाइमआउट (सेकंड में) - वर्कर्स को बंद होने के लिए अधिक समय दें
-graceful_timeout = 60 # <<<--- यह लाइन जोड़ी गई है
+# Process naming
+proc_name = 'tubealgo'
+
+# Server hooks
+def on_exit(server):
+    server.log.info("TubeAlgo server shutting down...")
+
+def worker_abort(worker):
+    worker.log.info("Worker aborting...")
