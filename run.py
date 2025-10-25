@@ -1,9 +1,6 @@
 # run.py
-# Use eventlet instead of gevent
-import eventlet
-eventlet.monkey_patch()
+# No async monkey patching for now - using sync workers
 
-# Now import the rest
 from tubealgo import create_app, celery as celery_app
 
 app = create_app()
