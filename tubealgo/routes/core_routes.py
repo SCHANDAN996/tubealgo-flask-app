@@ -1,7 +1,9 @@
 # tubealgo/routes/core_routes.py
 
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
+from flask_wtf import FlaskForm  # Import FlaskForm
 from tubealgo import db
+from tubealgo.models import SubscriptionPlan  # Import SubscriptionPlan
 
 core_bp = Blueprint('core', __name__)
 
@@ -19,7 +21,16 @@ def contact():
 
 @core_bp.route('/pricing')
 def pricing():
-    return render_template('pricing.html')
+    from flask_login import current_user
+    
+    # Create a form instance for CSRF token
+    form = FlaskForm()
+    
+    # Fetch all subscription plans from database
+    plans = SubscriptionPlan.query.filter(SubscriptionPlan.plan_id != 'free').all()
+    
+    # Pass current user data safely
+    return render_template('pricing.html', form=form, plans=plans, current_user=current_user)
 
 @core_bp.route('/privacy')
 def privacy():
@@ -66,7 +77,6 @@ def instant_analysis():
 def health_check():
     """Health check endpoint for Render"""
     try:
-        # Test database connection
         from tubealgo import db
         db.session.execute('SELECT 1')
         return {'status': 'healthy', 'database': 'connected'}, 200
