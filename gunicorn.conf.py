@@ -1,12 +1,11 @@
 # gunicorn.conf.py
 import multiprocessing
 
-# Use eventlet instead of gevent
-worker_class = 'eventlet'
+# Use sync workers instead of async for better compatibility
+worker_class = 'sync'
 
 # Worker configuration
 workers = 1
-worker_connections = 1000
 
 # Bind address
 bind = '0.0.0.0:10000'
