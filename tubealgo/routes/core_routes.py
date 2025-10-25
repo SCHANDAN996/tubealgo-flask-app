@@ -1,9 +1,10 @@
 # tubealgo/routes/core_routes.py
 
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
-from flask_wtf import FlaskForm  # Import FlaskForm
+from flask_wtf import FlaskForm
+from flask_login import current_user
 from tubealgo import db
-from tubealgo.models import SubscriptionPlan  # Import SubscriptionPlan
+from tubealgo.models import SubscriptionPlan
 
 core_bp = Blueprint('core', __name__)
 
@@ -21,16 +22,13 @@ def contact():
 
 @core_bp.route('/pricing')
 def pricing():
-    from flask_login import current_user
-    
     # Create a form instance for CSRF token
     form = FlaskForm()
     
-    # Fetch all subscription plans from database
+    # Fetch all subscription plans from database (excluding free plan)
     plans = SubscriptionPlan.query.filter(SubscriptionPlan.plan_id != 'free').all()
     
-    # Pass current user data safely
-    return render_template('pricing.html', form=form, plans=plans, current_user=current_user)
+    return render_template('pricing.html', form=form, plans=plans)
 
 @core_bp.route('/privacy')
 def privacy():
