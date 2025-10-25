@@ -10,8 +10,7 @@ from flask_limiter.util import get_remote_address
 from datetime import datetime, timezone, timedelta
 from celery import Celery, Task
 from celery.schedules import crontab
-import config # Assuming config.py is in the parent directory
-# <<< बदलाव यहाँ है: text इम्पोर्ट किया गया >>>
+import config
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 import pytz
@@ -39,24 +38,20 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
     if not utc_dt:
         return ""
 
-    user_tz_str = 'Asia/Kolkata' # Default
+    user_tz_str = 'Asia/Kolkata'
     try:
-        # Check if user is logged in and has timezone set
         if current_user and current_user.is_authenticated and hasattr(current_user, 'timezone') and current_user.timezone:
             user_tz_str = current_user.timezone
         user_tz = pytz.timezone(user_tz_str)
     except pytz.UnknownTimeZoneError:
-        user_tz = pytz.timezone('Asia/Kolkata') # Fallback
+        user_tz = pytz.timezone('Asia/Kolkata')
 
-    # Ensure the input is a datetime object
     if not isinstance(utc_dt, datetime):
         try:
-            # Attempt to parse if it's a string (e.g., from DB)
             utc_dt = datetime.fromisoformat(str(utc_dt).replace('Z', '+00:00'))
         except (ValueError, TypeError):
-             return str(utc_dt) # Return original if parsing fails
+             return str(utc_dt)
 
-    # Make the datetime object timezone-aware (assume UTC if naive)
     if utc_dt.tzinfo is None:
         utc_dt = utc_dt.replace(tzinfo=pytz.utc)
 
@@ -65,19 +60,17 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
         return local_dt.strftime(fmt)
     except Exception as e:
          print(f"Error localizing datetime ({utc_dt}): {e}")
-         # Fallback to UTC display if conversion fails
          return utc_dt.strftime(fmt) + " UTC"
 
 
 def create_app():
-    # Correctly locate static and template folders relative to the root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     static_folder_path = os.path.join(project_root, 'static')
     template_folder_path = os.path.join(project_root, 'tubealgo', 'templates')
     instance_folder_path = os.path.join(project_root, 'instance')
 
     app = Flask(
-        __name__.split('.')[0], # Use package name 'tubealgo'
+        __name__.split('.')[0],
         instance_path=instance_folder_path,
         instance_relative_config=True,
         static_folder=static_folder_path,
@@ -136,49 +129,66 @@ def create_app():
 
     limiter_storage_uri = app.config.get("REDIS_URL", "memory://")
     limiter.init_app(app)
-    # limiter.storage_uri = limiter_storage_uri # Usually not needed if using config
 
     # --- Import and register Blueprints ---
-    # It's generally safer to import blueprints *after* extensions are initialized
     from .auth_local import auth_local_bp
     app.register_blueprint(auth_local_bp, url_prefix='/')
+    
     from .auth_google import auth_google_bp
     app.register_blueprint(auth_google_bp, url_prefix='/')
+    
     from .routes.core_routes import core_bp
     app.register_blueprint(core_bp, url_prefix='/')
+    
     from .routes.dashboard_routes import dashboard_bp
     app.register_blueprint(dashboard_bp, url_prefix='/')
+    
     from .routes.competitor_routes import competitor_bp
     app.register_blueprint(competitor_bp, url_prefix='/')
+    
     from .routes.analysis_routes import analysis_bp
     app.register_blueprint(analysis_bp, url_prefix='/')
+    
     from .routes.api_routes import api_bp
     app.register_blueprint(api_bp)
+    
     from .routes.ai_api_routes import ai_api_bp
     app.register_blueprint(ai_api_bp)
+    
     from .routes.tool_routes import tool_bp
     app.register_blueprint(tool_bp, url_prefix='/')
+    
     from .routes.settings_routes import settings_bp
     app.register_blueprint(settings_bp, url_prefix='/')
+    
     from .routes.payment_routes import payment_bp
     app.register_blueprint(payment_bp, url_prefix='/payment')
-    # <<< बदलाव यहाँ है: routes.admin से admin_bp इम्पोर्ट करें >>>
-    from .routes.admin import admin_bp # Import combined admin blueprint from its __init__.py
-    app.register_blueprint(admin_bp, url_prefix='/admin') # Register admin blueprint
+    
+    # ✅ CORRECT ADMIN IMPORT - Using folder structure
+    from .routes.admin import admin_bp
+    app.register_blueprint(admin_bp, url_prefix='/admin')
+    
     from .routes.video_manager_routes import video_manager_bp
     app.register_blueprint(video_manager_bp, url_prefix='/manage')
+    
     from .routes.playlist_manager_routes import playlist_manager_bp
     app.register_blueprint(playlist_manager_bp, url_prefix='/manage')
+    
     from .routes.ab_test_routes import ab_test_bp
     app.register_blueprint(ab_test_bp, url_prefix='/manage')
+    
     from .routes.report_routes import report_bp
     app.register_blueprint(report_bp)
+    
     from .routes.video_analytics_routes import video_analytics_bp
     app.register_blueprint(video_analytics_bp)
+    
     from .routes.planner_routes import planner_bp
     app.register_blueprint(planner_bp)
+    
     from .routes.goal_routes import goal_bp
     app.register_blueprint(goal_bp)
+    
     from .routes.user_routes import user_bp
     app.register_blueprint(user_bp)
 
@@ -201,7 +211,6 @@ def create_app():
             response.headers['Expires'] = '0'
         return response
 
-    # <<< Static file versioning हटा दिया गया है >>>
     @app.context_processor
     def override_url_for():
         return dict(url_for=url_for)
@@ -229,17 +238,14 @@ def create_app():
     with app.app_context():
         try:
             print("Checking database connection...")
-            # <<< बदलाव यहाँ है: text() का उपयोग किया गया >>>
             db.session.execute(text('SELECT 1'))
             print("Database connection successful.")
-            # db.create_all() # Ensure this is commented out or removed
             seed_plans()
             print("Initializing AI clients within app context...")
             initialize_ai_clients()
 
         except OperationalError as e:
             print(f"FATAL: Database operation failed during init. Check DB connection string and reachability: {e}")
-            # Log the error, but allow the app to potentially start if possible
             log_system_event("DB Connection Error on Startup", "ERROR", details=str(e))
         except Exception as e:
             print(f"Error during app context initialization: {e}")
@@ -250,7 +256,6 @@ def create_app():
 
     return app
 
-# --- Helper Functions (format_relative_time, seed_plans) ---
 def format_relative_time(dt_input):
     """Jinja filter to format datetime object or string into relative time."""
     if not dt_input: return ""
