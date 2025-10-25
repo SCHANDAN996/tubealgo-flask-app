@@ -21,56 +21,56 @@ class CSRFOnlyForm(FlaskForm):
 
 def mask_api_key(key_name):
     """Masks an API key for display, handling potential lists."""
-    key_value = get_config_value(key_name) # Uses combined logic (DB > Env)
+    key_value = get_config_value(key_name)
     if not key_value:
         return "Not Set"
 
-    # Handle lists/JSON for multi-key fields
     if key_name in ['GEMINI_API_KEY', 'YOUTUBE_API_KEYS']:
         keys_list = []
         try:
-            # Try loading as JSON list
             loaded_keys = json.loads(key_value)
             if isinstance(loaded_keys, list):
-                # Filter out non-string or empty elements
                 keys_list = [k.strip() for k in loaded_keys if isinstance(k, str) and k.strip()]
+        # <<< यहाँ इंडेंटेशन देखें >>>
         except (json.JSONDecodeError, TypeError):
-            # <<< बदलाव यहाँ है: इंडेंटेशन ठीक किया गया और लॉजिक जोड़ा गया >>>
-            # Try splitting by comma if it's a string
+            # Fallback for comma-separated or plain string
             if isinstance(key_value, str):
                 keys_list = [k.strip() for k in key_value.split(',') if k.strip()]
-            # <<< इंडेंटेशन फिक्स का अंत >>>
+                # If splitting by comma gives one item, treat it as a single key if no comma was present
+                if len(keys_list) == 1 and ',' not in key_value:
+                    keys_list = [key_value.strip()] # Treat as single key
+        # <<< इंडेंटेशन यहाँ सही होना चाहिए >>>
 
         if keys_list:
-             # Mask the first key found
              first_key = keys_list[0]
              masked_first = f"{first_key[:4]}...{first_key[-4:]}" if len(first_key) > 8 else "Short Key"
              return f"~{len(keys_list)} keys set (e.g., {masked_first})"
         else:
-             # Check if the original value was non-empty but unparseable
              if key_value and isinstance(key_value, str) and key_value.strip():
                  return "Set (Invalid Format)"
              else:
-                 return "Not Set or Empty" # Explicitly state if empty
+                 return "Not Set or Empty"
 
     # Default masking for single keys
     if isinstance(key_value, str) and len(key_value) > 8:
         return f"{key_value[:4]}...{key_value[-4:]}"
-    elif isinstance(key_value, str) and key_value: # Check if it's a non-empty string
+    elif isinstance(key_value, str) and key_value:
         return "Set (Short Key)"
     else:
-        # Handle cases where the value might be non-string or empty
-        if key_value: # If it exists but is not a string (or empty string handled above)
+        if key_value:
              return "Set (Invalid Format)"
         else:
              return "Not Set or Empty"
+
+# --- बाकी के रूट्स (logs, cache, settings, ai-settings, test-config, user-growth, plan-distribution) पहले जैसे ही रहेंगे ---
+# --- सुनिश्चित करें कि उनमें सही इम्पोर्ट्स ('SiteSetting', 'text') और CSRF हैंडलिंग हो ---
 
 @admin_bp.route('/logs')
 @login_required
 @admin_required
 def system_logs():
     page = request.args.get('page', 1, type=int)
-    logs_pagination = None # Initialize
+    logs_pagination = None
     try:
         logs_pagination = SystemLog.query.order_by(SystemLog.timestamp.desc()).paginate(page=page, per_page=25, error_out=False)
     except (exc.OperationalError, exc.ProgrammingError) as e:
@@ -114,49 +114,38 @@ def clear_cache():
     else:
         current_app.logger.warning(f"CSRF validation failed for clear_cache: {form.errors}")
         flash("Invalid request or security token expired.", 'error')
-
     return redirect(url_for('admin.cache_management'))
 
 @admin_bp.route('/settings', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def site_settings():
-    form = FlaskForm() # Use FlaskForm for CSRF handling
-
-    if form.validate_on_submit(): # This handles POST and validates CSRF
+    form = FlaskForm()
+    if form.validate_on_submit():
         form_data = request.form.to_dict()
-
-        # Handle checkboxes
         feature_flags = ['feature_referral_system', 'feature_video_upload']
         for flag in feature_flags:
             form_data[flag] = 'True' if flag in form_data else 'False'
-
-        # Handle bulk edit limits
         bulk_edit_keys = ['bulk_edit_limit_free', 'bulk_edit_limit_creator', 'bulk_edit_limit_pro']
         for key in bulk_edit_keys:
             value_str = form_data.get(key, '0')
             value_int = 0
             try:
                 value_int = int(value_str)
-                value_int = 0 if value_int < -1 else value_int # Allow -1, floor at 0
+                value_int = 0 if value_int < -1 else value_int
             except (ValueError, TypeError):
                 default_val = -1 if 'pro' in key else (20 if 'creator' in key else 0)
                 value_int = default_val
                 flash(f"Invalid value for {key.replace('_', ' ').title()}. Using default: {'Unlimited' if default_val == -1 else default_val}", 'warning')
             form_data[key] = str(value_int)
-
         secret_keys = ['OPENAI_API_KEY', 'YOUTUBE_API_KEYS', 'TELEGRAM_BOT_TOKEN',
                        'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET',
                        'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
                        'CASHFREE_APP_ID', 'CASHFREE_SECRET_KEY']
-
         settings_to_update = {}
         settings_to_add = []
-
-        # Prepare updates/inserts
         for key, value in form_data.items():
             if key == 'csrf_token': continue
-
             setting = None
             try:
                 setting = SiteSetting.query.get(key)
@@ -165,46 +154,30 @@ def site_settings():
                  log_system_event("Error accessing SiteSetting table on save", "ERROR", details=str(e))
                  db.session.rollback()
                  return redirect(url_for('admin.site_settings'))
-
             is_secret = key in secret_keys
-            # Skip saving secrets only if the submitted value is empty.
             if is_secret and key in form_data and not value.strip():
-                 continue # Skip saving empty submitted secrets
-
+                 continue
             if setting:
-                 # Update only if value actually changed
                  if setting.value != value:
                      settings_to_update[key] = value
-            # Add new setting if:
-            # 1. Value is provided OR
-            # 2. It's not a secret (so empty non-secrets can be saved)
             elif value.strip() or not is_secret:
                 settings_to_add.append(SiteSetting(key=key, value=value))
-
         try:
-            # Perform updates
             for key, value in settings_to_update.items():
                 db.session.merge(SiteSetting(key=key, value=value))
-
-            # Perform inserts
             if settings_to_add:
                 db.session.bulk_save_objects(settings_to_add)
-
             db.session.commit()
             flash('Site settings updated successfully!', 'success')
         except Exception as e:
             db.session.rollback()
             flash(f'Error saving settings: {str(e)}', 'error')
             log_system_event("Error saving site settings", "ERROR", details=str(e), traceback_info=traceback.format_exc())
-
         return redirect(url_for('admin.site_settings'))
-
-    elif request.method == 'POST': # If CSRF validation failed
+    elif request.method == 'POST':
         current_app.logger.warning(f"CSRF validation failed for site_settings: {form.errors}")
         flash("Invalid request or security token expired. Please try again.", 'error')
-        # Fall through to GET rendering
 
-    # --- GET Request Handling ---
     settings = {}
     try:
         settings_list = SiteSetting.query.all()
@@ -217,8 +190,6 @@ def site_settings():
          flash(f"An unexpected error occurred loading settings: {e}", "error")
          log_system_event("Unexpected error loading SiteSetting", "ERROR", details=str(e))
          db.session.rollback()
-
-    # Ensure defaults exist if needed by template
     default_settings = {
         'ADMIN_TELEGRAM_CHAT_ID': '',
         'bulk_edit_limit_free': '0',
@@ -233,8 +204,6 @@ def site_settings():
     }
     for key, default_value in default_settings.items():
         settings.setdefault(key, default_value)
-
-    # Pass form=form for {{ form.hidden_tag() }} in template
     return render_template('admin/site_settings.html', settings=settings, mask_key=mask_api_key, form=form)
 
 
@@ -243,15 +212,11 @@ def site_settings():
 @admin_required
 def reset_setting(key_name):
     try:
-        # Check CSRF token from the form submitted in the template
-        validate_csrf(request.form.get('csrf_token')) # Check against form token
+        validate_csrf(request.form.get('csrf_token'))
     except ValidationError:
         flash('CSRF token validation failed. Could not reset setting.', 'error')
-        # Redirect based on context
-        if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name:
-             return redirect(url_for('admin.ai_settings'))
-        else:
-             return redirect(url_for('admin.site_settings'))
+        redirect_url = url_for('admin.ai_settings') if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name else url_for('admin.site_settings')
+        return redirect(redirect_url)
 
     setting = SiteSetting.query.get(key_name)
     if setting:
@@ -266,32 +231,24 @@ def reset_setting(key_name):
     else:
         flash(f"Setting '{key_name}' not found in DB (already default).", 'info')
 
-    # Redirect based on context
-    if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name:
-         return redirect(url_for('admin.ai_settings'))
-    else:
-         return redirect(url_for('admin.site_settings'))
+    redirect_url = url_for('admin.ai_settings') if key_name.startswith('prompt_') or 'GEMINI' in key_name or 'SELECTED_AI_MODEL' in key_name else url_for('admin.site_settings')
+    return redirect(redirect_url)
 
 
 @admin_bp.route('/ai-settings', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def ai_settings():
-    form = FlaskForm() # Use FlaskForm for CSRF handling
-
-    if form.validate_on_submit(): # Handles POST and CSRF
+    form = FlaskForm()
+    if form.validate_on_submit():
         keys_from_form = request.form.getlist('gemini_keys')
         valid_keys = [key.strip() for key in keys_from_form if key and key.strip()]
         keys_json = json.dumps(valid_keys)
-
-        # Update or create GEMINI_API_KEY setting
         keys_setting = SiteSetting.query.get('GEMINI_API_KEY')
         if keys_setting:
             if keys_setting.value != keys_json: keys_setting.value = keys_json
-        elif valid_keys: # Only add if there are valid keys
+        elif valid_keys:
             db.session.add(SiteSetting(key='GEMINI_API_KEY', value=keys_json))
-
-        # Update or create SELECTED_AI_MODEL setting
         selected_model = request.form.get('selected_model')
         if selected_model:
             model_setting = SiteSetting.query.get('SELECTED_AI_MODEL')
@@ -299,20 +256,17 @@ def ai_settings():
                 if model_setting.value != selected_model: model_setting.value = selected_model
             else:
                 db.session.add(SiteSetting(key='SELECTED_AI_MODEL', value=selected_model))
-
-        # Update or create/delete Prompts
         prompt_keys = ['prompt_generate_ideas', 'prompt_titles_and_tags', 'prompt_description']
         for key in prompt_keys:
             value = request.form.get(key, '').strip()
             setting = SiteSetting.query.get(key)
             if setting:
-                if value: # If new value is provided
+                if value:
                     if setting.value != value: setting.value = value
-                else: # If new value is empty, delete the setting
+                else:
                     db.session.delete(setting)
-            elif value: # Only create if not empty
+            elif value:
                 db.session.add(SiteSetting(key=key, value=value))
-
         try:
             db.session.commit()
             flash('AI Settings updated successfully!', 'success')
@@ -320,15 +274,12 @@ def ai_settings():
             db.session.rollback()
             flash(f'Error saving AI settings: {str(e)}', 'error')
             log_system_event("Error saving AI settings", "ERROR", details=str(e), traceback_info=traceback.format_exc())
-
         return redirect(url_for('admin.ai_settings'))
-
-    elif request.method == 'POST': # If CSRF validation failed
+    elif request.method == 'POST':
         current_app.logger.warning(f"CSRF validation failed for ai_settings: {form.errors}")
         flash("Invalid request or security token expired. Please try again.", 'error')
-        # Fall through to GET rendering
 
-    # --- GET Request ---
+    # GET Request
     current_keys = []
     keys_setting_value = get_config_value('GEMINI_API_KEY', '[]')
     try:
@@ -344,7 +295,6 @@ def ai_settings():
             current_keys = []
     if not current_keys: current_keys = [""]
 
-    # Fetch available models
     def get_model_display_info(model_name):
         if not model_name: return "Unknown Model"
         if "flash" in model_name: return "Fast & cost-effective"
@@ -375,10 +325,7 @@ def ai_settings():
         flash("Add a valid Gemini API key to fetch models.", "info")
         available_models_info = [{'name': default_model, 'display': get_model_display_info(default_model)}]
 
-
     selected_model = get_config_value('SELECTED_AI_MODEL', default_model)
-
-    # Load prompt settings
     settings = {}
     try:
         settings = {s.key: s.value for s in SiteSetting.query.all()}
@@ -386,7 +333,6 @@ def ai_settings():
         flash("Could not load prompt settings from database.", "warning")
         db.session.rollback()
 
-    # Pass form=form for {{ form.hidden_tag() }} in template
     return render_template('admin/ai_settings.html',
                            current_keys=current_keys,
                            available_models_info=available_models_info,
@@ -399,7 +345,6 @@ def ai_settings():
 @login_required
 @admin_required
 def test_ai_config():
-    # <<< CSRF Validation (assuming token is sent in JSON body or header) >>>
     csrf_token_from_request = request.json.get('csrf_token') or request.headers.get('X-CSRFToken')
     try:
         if csrf_token_from_request:
@@ -420,11 +365,9 @@ def test_ai_config():
         if not key: continue;
         valid_keys_provided = True
         key_masked = f"{key[:4]}...{key[-4:]}" if len(key) > 8 else "Short Key"
-
         try:
             genai.configure(api_key=key);
             model = genai.GenerativeModel(model_name)
-            # More robust test call
             response = model.generate_content("Say 'Test OK'", generation_config={'max_output_tokens': 5, 'temperature': 0})
             if hasattr(response, 'text') and isinstance(response.text, str) and 'ok' in response.text.lower():
                 results.append({'key_mask': key_masked, 'status': 'Valid'})
@@ -436,7 +379,6 @@ def test_ai_config():
                  results.append({'key_mask': key_masked, 'status': 'Invalid', 'reason': reason})
         except Exception as e:
             error_message = str(e).lower(); error_detail = "Failed (Check Model/Key/Billing/Permissions)"
-            # More specific error mapping
             if 'api_key_not_valid' in error_message or 'provide an api key' in error_message: error_detail = "API Key Invalid"
             elif 'permission_denied' in error_message: error_detail = "Permission Denied (Check Project/API Enablement/Billing)"
             elif 'quota' in error_message: error_detail = "Quota Exceeded"
@@ -452,7 +394,6 @@ def test_ai_config():
     return jsonify({'status': 'success' if overall_success else 'error', 'results': results})
 
 
-# --- user_growth_data function (includes previous fix) ---
 @admin_bp.route('/data/user_growth')
 @login_required
 @admin_required
@@ -484,12 +425,10 @@ def user_growth_data():
     for i in range(30):
         current_date = thirty_days_ago_dt + timedelta(days=i)
         labels.append(current_date.strftime('%d %b'))
-        data.append(user_counts.get(current_date, 0)) # Use date object as key
+        data.append(user_counts.get(current_date, 0))
 
     return jsonify({'labels': labels, 'data': data})
-# --- End of user_growth_data function ---
 
-# --- plan_distribution_data function (unchanged) ---
 @admin_bp.route('/data/plan_distribution')
 @login_required
 @admin_required
