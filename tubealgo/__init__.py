@@ -4,7 +4,7 @@ import os
 from flask import Flask, url_for, session, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
-# from flask_migrate import Migrate # <<<--- यह लाइन हटाएं
+# from flask_migrate import Migrate # <<<--- यह लाइन हटाएं (पहले से हटाई हुई थी)
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -21,7 +21,7 @@ load_dotenv()
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-# migrate = Migrate() # <<<--- यह लाइन हटाएं
+# migrate = Migrate() # <<<--- यह लाइन हटाएं (पहले से हटाई हुई थी)
 csrf = CSRFProtect()
 
 def limiter_key_func():
@@ -119,7 +119,7 @@ def create_app():
     app.celery = celery
 
     db.init_app(app)
-    # migrate.init_app(app, db) # <<<--- यह लाइन हटाएं
+    # migrate.init_app(app, db) # <<<--- यह लाइन हटाएं (पहले से हटाई हुई थी)
     csrf.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth_local.login'
@@ -155,8 +155,8 @@ def create_app():
     app.register_blueprint(settings_bp, url_prefix='/')
     from .routes.payment_routes import payment_bp
     app.register_blueprint(payment_bp, url_prefix='/payment')
-    from .routes.admin import admin_bp
-    app.register_blueprint(admin_bp, url_prefix='/admin')
+    from .routes.admin_routes import admin_bp # एडमिन Blueprint इम्पोर्ट करें
+    app.register_blueprint(admin_bp, url_prefix='/admin') # एडमिन Blueprint रजिस्टर करें
     from .routes.video_manager_routes import video_manager_bp
     app.register_blueprint(video_manager_bp, url_prefix='/manage')
     from .routes.playlist_manager_routes import playlist_manager_bp
@@ -215,21 +215,19 @@ def create_app():
         return dict(csrf_token=generate_csrf)
 
     with app.app_context():
-        # --- बदलाव यहाँ है ---
-        # ऐप शुरू होने पर टेबल बनाने की कोशिश करें
+        # --- बदलाव यहाँ है: db.create_all() को कमेंट किया गया है ---
         try:
-            print("Attempting to create database tables...")
-            db.create_all() # <<<--- यह लाइन टेबल बनाएगी
-            print("Database tables checked/created.")
-            seed_plans() # टेबल बनने के बाद ही प्लान सीड करें
+            print("Checking database connection...")
+            # db.create_all() # <<<--- इस लाइन को कमेंट करें या हटा दें
+            # print("Database tables checked/created.") # इसे भी हटा दें
+            seed_plans() # प्लान सीड करें
             print("Initializing AI clients within app context...")
             initialize_ai_clients()
+
         except OperationalError as e:
-            print(f"Database operation failed during init (DB might be unavailable or migrating): {e}")
-            # log_system_event यहाँ इस्तेमाल न करें क्योंकि हो सकता है लॉग टेबल भी न बनी हो
+            print(f"Database operation failed during init (DB might be unavailable): {e}")
         except Exception as e:
             print(f"Error during app context initialization: {e}")
-            # log_system_event("App Context Init Error", "ERROR", details=str(e)) # यहाँ भी इस्तेमाल न करें
         # --- बदलाव का अंत ---
 
     return app
@@ -246,7 +244,8 @@ def format_relative_time(dt_input):
     else: return str(dt_input)
     if not dt_obj: return str(dt_input)
     if dt_obj.tzinfo is None: dt_obj = dt_obj.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc); diff = now - dt_obj; seconds = diff.total_seconds()
+    now = datetime.now(timezone.utc); diff = now - dt_obj;
+    seconds = diff.total_seconds()
     if seconds < 0: return "in the future"
     if seconds < 60: return "just now"
     minutes = seconds / 60
@@ -268,9 +267,7 @@ def seed_plans():
     from sqlalchemy import inspect
     try:
         inspector = inspect(db.engine)
-        # अब यह जांचने की आवश्यकता नहीं है कि टेबल मौजूद है या नहीं, क्योंकि create_all ने इसे बना दिया होगा
-        # if not inspector.has_table("subscription_plan"): return
-
+        # अब यह जांचने की आवश्यकता नहीं है कि टेबल मौजूद है या नहीं
         if SubscriptionPlan.query.count() == 0:
             print("Seeding subscription plans...")
             free_plan = SubscriptionPlan(plan_id='free', name='Free', price=0, competitors_limit=2, keyword_searches_limit=5, ai_generations_limit=3, playlist_suggestions_limit=3)
@@ -279,7 +276,6 @@ def seed_plans():
             db.session.add_all([free_plan, creator_plan, pro_plan])
             db.session.commit()
             print("Plans seeded successfully.")
-    # OperationalError अभी भी हो सकता है अगर DB कनेक्ट नहीं हुआ है
     except OperationalError as e:
         print(f"Skipping seed_plans due to database error: {e}")
         db.session.rollback()
