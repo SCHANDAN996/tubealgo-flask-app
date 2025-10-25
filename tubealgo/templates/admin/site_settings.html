@@ -3,170 +3,283 @@
 {% block header_title %}Site Settings{% endblock %}
 
 {% block content %}
-<form method="POST" class="space-y-6">
-    {# CSRF Token Protection #}
-    {{ csrf_token() }} {# Make sure CSRF token is included if using Flask-WTF or similar #}
+<form method="POST" action="{{ url_for('admin.site_settings') }}" class="space-y-6">
+    {{ form.hidden_tag() }}
 
-    <div class="bg-card p-6 rounded-lg border">
-        <h3 class="text-lg font-semibold border-b pb-2 mb-4">General Settings</h3>
-        <div>
-            <label for="MEASUREMENT_ID" class="font-medium text-foreground">Google Analytics ID</label>
-            <p class="text-sm text-muted-foreground mb-2">Example: G-XXXXXXXXXX</p>
-            <input type="text" name="MEASUREMENT_ID" id="MEASUREMENT_ID" value="{{ settings.get('MEASUREMENT_ID', '') }}" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+    <!-- General Settings -->
+    <div class="bg-card rounded-lg border border-border overflow-hidden">
+        <div class="bg-secondary px-6 py-4 border-b border-border">
+            <h3 class="text-lg font-semibold text-foreground flex items-center">
+                <i class="fa-solid fa-gear mr-3 text-primary"></i>
+                General Settings
+            </h3>
         </div>
-        <div class="mt-4">
-            <label for="site_announcement" class="font-medium text-foreground">Site Announcement</label>
-            <p class="text-sm text-muted-foreground mb-2">This message will appear on the dashboard for all users. Leave blank to hide.</p>
-            <textarea name="site_announcement" id="site_announcement" rows="3" class="mt-1 block w-full bg-background border border-input rounded-md p-2">{{ settings.get('site_announcement', '') }}</textarea>
+        <div class="p-6 space-y-6">
+            <div>
+                <label for="MEASUREMENT_ID" class="block text-sm font-medium text-foreground mb-2">
+                    Google Analytics ID
+                </label>
+                <p class="text-xs text-muted-foreground mb-2">Example: G-XXXXXXXXXX</p>
+                <input type="text" 
+                       name="MEASUREMENT_ID" 
+                       id="MEASUREMENT_ID" 
+                       value="{{ settings.get('MEASUREMENT_ID', '') }}" 
+                       class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                       placeholder="G-XXXXXXXXXX">
+            </div>
+            
+            <div>
+                <label for="site_announcement" class="block text-sm font-medium text-foreground mb-2">
+                    Site Announcement
+                </label>
+                <p class="text-xs text-muted-foreground mb-2">This message will appear on the dashboard for all users. Leave blank to hide.</p>
+                <textarea name="site_announcement" 
+                          id="site_announcement" 
+                          rows="3" 
+                          class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                          placeholder="Enter announcement text...">{{ settings.get('site_announcement', '') }}</textarea>
+            </div>
         </div>
     </div>
 
-    <div class="bg-card p-6 rounded-lg border">
-        <h3 class="text-lg font-semibold border-b pb-2 mb-4">Feature Flags</h3>
-        <p class="text-sm text-muted-foreground mb-4">Temporarily enable or disable features globally.</p>
-        <div class="space-y-4">
-            {# Referral System Toggle #}
-            <label class="flex items-center justify-between p-3 bg-secondary rounded-lg">
-                <div>
+    <!-- Feature Flags -->
+    <div class="bg-card rounded-lg border border-border overflow-hidden">
+        <div class="bg-secondary px-6 py-4 border-b border-border">
+            <h3 class="text-lg font-semibold text-foreground flex items-center">
+                <i class="fa-solid fa-toggle-on mr-3 text-primary"></i>
+                Feature Flags
+            </h3>
+            <p class="text-xs text-muted-foreground mt-1">Enable or disable features globally</p>
+        </div>
+        <div class="p-6 space-y-4">
+            <!-- Referral System -->
+            <label class="flex items-center justify-between p-4 bg-secondary rounded-lg cursor-pointer hover:bg-secondary/80 transition-colors">
+                <div class="flex-1">
                     <p class="font-semibold text-foreground">Referral System</p>
-                    <p class="text-sm text-muted-foreground">Enable/disable the referral system for users.</p>
+                    <p class="text-sm text-muted-foreground">Enable/disable the referral system for users</p>
                 </div>
-                <div class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" name="feature_referral_system" value="True" class="sr-only peer" {% if settings.get('feature_referral_system', 'True') == 'True' %}checked{% endif %}>
+                <div class="relative inline-flex items-center cursor-pointer ml-4">
+                    <input type="checkbox" 
+                           name="feature_referral_system" 
+                           value="True" 
+                           class="sr-only peer" 
+                           {% if settings.get('feature_referral_system', 'True') == 'True' %}checked{% endif %}>
                     <div class="w-11 h-6 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                    {# Hidden input to send 'False' if checkbox is unchecked #}
                     <input type="hidden" name="feature_referral_system" value="False" {% if settings.get('feature_referral_system', 'True') == 'True' %}disabled{% endif %}>
                 </div>
             </label>
-             {# Video Upload Toggle #}
-            <label class="flex items-center justify-between p-3 bg-secondary rounded-lg">
-                <div>
+            
+            <!-- Video Upload -->
+            <label class="flex items-center justify-between p-4 bg-secondary rounded-lg cursor-pointer hover:bg-secondary/80 transition-colors">
+                <div class="flex-1">
                     <p class="font-semibold text-foreground">Video Upload Feature</p>
-                    <p class="text-sm text-muted-foreground">Allow users to upload videos directly.</p>
+                    <p class="text-sm text-muted-foreground">Allow users to upload videos directly</p>
                 </div>
-                <div class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" name="feature_video_upload" value="True" class="sr-only peer" {% if settings.get('feature_video_upload', 'True') == 'True' %}checked{% endif %}>
+                <div class="relative inline-flex items-center cursor-pointer ml-4">
+                    <input type="checkbox" 
+                           name="feature_video_upload" 
+                           value="True" 
+                           class="sr-only peer" 
+                           {% if settings.get('feature_video_upload', 'True') == 'True' %}checked{% endif %}>
                     <div class="w-11 h-6 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                     {# Hidden input to send 'False' if checkbox is unchecked #}
                     <input type="hidden" name="feature_video_upload" value="False" {% if settings.get('feature_video_upload', 'True') == 'True' %}disabled{% endif %}>
-               </div>
+                </div>
             </label>
-            {# Add more feature flags here if needed #}
         </div>
     </div>
 
-    {#--- Bulk Edit Limits Section ---#}
-    <div class="bg-card p-6 rounded-lg border">
-        <h3 class="text-lg font-semibold border-b pb-2 mb-4">Bulk Edit Limits (Per Day)</h3>
-        <p class="text-sm text-muted-foreground mb-4">Set the maximum number of videos a user can bulk edit per day for each plan. (-1 means unlimited)</p>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Bulk Edit Limits -->
+    <div class="bg-card rounded-lg border border-border overflow-hidden">
+        <div class="bg-secondary px-6 py-4 border-b border-border">
+            <h3 class="text-lg font-semibold text-foreground flex items-center">
+                <i class="fa-solid fa-layer-group mr-3 text-primary"></i>
+                Bulk Edit Limits (Per Day)
+            </h3>
+            <p class="text-xs text-muted-foreground mt-1">Set the maximum number of videos a user can bulk edit per day. Use -1 for unlimited.</p>
+        </div>
+        <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-                <label for="bulk_edit_limit_free" class="font-medium text-foreground">Free Plan Limit</label>
-                <input type="number" name="bulk_edit_limit_free" id="bulk_edit_limit_free" value="{{ settings.get('bulk_edit_limit_free', 0) }}" min="-1" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+                <label for="bulk_edit_limit_free" class="block text-sm font-medium text-foreground mb-2">
+                    Free Plan Limit
+                </label>
+                <input type="number" 
+                       name="bulk_edit_limit_free" 
+                       id="bulk_edit_limit_free" 
+                       value="{{ settings.get('bulk_edit_limit_free', 0) }}" 
+                       min="-1" 
+                       class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
             </div>
             <div>
-                <label for="bulk_edit_limit_creator" class="font-medium text-foreground">Creator Plan Limit</label>
-                <input type="number" name="bulk_edit_limit_creator" id="bulk_edit_limit_creator" value="{{ settings.get('bulk_edit_limit_creator', 20) }}" min="-1" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+                <label for="bulk_edit_limit_creator" class="block text-sm font-medium text-foreground mb-2">
+                    Creator Plan Limit
+                </label>
+                <input type="number" 
+                       name="bulk_edit_limit_creator" 
+                       id="bulk_edit_limit_creator" 
+                       value="{{ settings.get('bulk_edit_limit_creator', 20) }}" 
+                       min="-1" 
+                       class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
             </div>
             <div>
-                <label for="bulk_edit_limit_pro" class="font-medium text-foreground">Pro Plan Limit</label>
-                <input type="number" name="bulk_edit_limit_pro" id="bulk_edit_limit_pro" value="{{ settings.get('bulk_edit_limit_pro', 50) }}" min="-1" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+                <label for="bulk_edit_limit_pro" class="block text-sm font-medium text-foreground mb-2">
+                    Pro Plan Limit
+                </label>
+                <input type="number" 
+                       name="bulk_edit_limit_pro" 
+                       id="bulk_edit_limit_pro" 
+                       value="{{ settings.get('bulk_edit_limit_pro', 50) }}" 
+                       min="-1" 
+                       class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
             </div>
         </div>
     </div>
-    {#--- End Bulk Edit Limits Section ---#}
 
-    <div class="bg-card p-6 rounded-lg border">
-        <h3 class="text-lg font-semibold border-b pb-2 mb-4">API Key Management</h3>
-        <p class="text-sm text-muted-foreground mb-4">Keys saved here override the `.env` file values. Resetting reverts to using the `.env` value (if it exists).</p>
-
-         {# Admin Telegram Chat ID #}
-         <div class="mb-4 bg-blue-500/10 p-4 rounded-lg border border-blue-500/20">
-             <div class="flex justify-between items-center">
-                <label for="ADMIN_TELEGRAM_CHAT_ID" class="font-bold text-blue-800 dark:text-blue-300">Admin Telegram Chat ID</label>
-                <form action="{{ url_for('admin.reset_setting', key_name='ADMIN_TELEGRAM_CHAT_ID') }}" method="POST" onsubmit="return confirm('Are you sure you want to reset this setting?')">
-                    {{ csrf_token() }} {# CSRF for reset form #}
-                    <button type="submit" class="text-xs text-destructive hover:underline font-semibold">Reset</button>
+    <!-- API Key Management -->
+    <div class="bg-card rounded-lg border border-border overflow-hidden">
+        <div class="bg-secondary px-6 py-4 border-b border-border">
+            <h3 class="text-lg font-semibold text-foreground flex items-center">
+                <i class="fa-solid fa-key mr-3 text-primary"></i>
+                API Key Management
+            </h3>
+            <p class="text-xs text-muted-foreground mt-1">Keys saved here override .env file values. Leave blank to keep existing key.</p>
+        </div>
+        
+        <!-- Admin Telegram Chat ID (Highlighted) -->
+        <div class="bg-blue-500/5 border-b border-blue-500/20 p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex-1">
+                    <label for="ADMIN_TELEGRAM_CHAT_ID" class="block text-sm font-bold text-blue-700 dark:text-blue-400 mb-2">
+                        <i class="fa-brands fa-telegram mr-2"></i>
+                        Admin Telegram Chat ID
+                    </label>
+                    <p class="text-xs text-blue-600/80 dark:text-blue-400/80 mb-3">Set your numeric Chat ID to receive critical system alerts</p>
+                    <input type="text" 
+                           name="ADMIN_TELEGRAM_CHAT_ID" 
+                           id="ADMIN_TELEGRAM_CHAT_ID" 
+                           value="{{ settings.get('ADMIN_TELEGRAM_CHAT_ID', '') }}" 
+                           class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                           placeholder="Enter numeric Chat ID">
+                </div>
+                <form action="{{ url_for('admin.reset_setting', key_name='ADMIN_TELEGRAM_CHAT_ID') }}" method="POST" onsubmit="return confirm('Reset to default?')">
+                    {{ form.hidden_tag() }}
+                    <button type="submit" class="px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 rounded-lg transition-colors whitespace-nowrap">
+                        <i class="fa-solid fa-rotate-left mr-2"></i>Reset
+                    </button>
                 </form>
             </div>
-            <p class="text-xs text-blue-700 dark:text-blue-400 mt-1">Set your personal numeric Chat ID here to receive critical system alerts.</p>
-            <input type="text" name="ADMIN_TELEGRAM_CHAT_ID" id="ADMIN_TELEGRAM_CHAT_ID" value="{{ settings.get('ADMIN_TELEGRAM_CHAT_ID', '') }}" class="mt-2 block w-full bg-background border border-input rounded-md p-2" placeholder="Enter numeric Chat ID for admin alerts">
         </div>
 
-        <hr class="my-6 border-border">
-
-         {# Other API Keys #}
-         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {# Macro for API Key Input #}
-            {% macro api_key_input(key_name, label, placeholder) %}
-            <div>
-                <div class="flex justify-between items-center">
-                    <label for="{{ key_name }}" class="font-medium">{{ label }}</label>
-                     <form action="{{ url_for('admin.reset_setting', key_name=key_name) }}" method="POST" onsubmit="return confirm('Are you sure you want to reset this key? This will revert to the value in the .env file, if it exists.')">
-                         {{ csrf_token() }} {# CSRF for reset form #}
-                        <button type="submit" class="text-xs text-destructive hover:underline font-semibold">Reset</button>
-                    </form>
+        <!-- Other API Keys -->
+        <div class="p-6">
+            {% macro api_key_row(key_name, label, placeholder, icon="fa-key") %}
+            <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 bg-secondary rounded-lg">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fa-solid {{ icon }} text-primary"></i>
+                        <label for="{{ key_name }}" class="text-sm font-medium text-foreground">{{ label }}</label>
+                    </div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs text-muted-foreground">Current:</span>
+                        <code class="text-xs font-mono px-2 py-1 bg-background rounded border border-border">{{ mask_key(key_name) }}</code>
+                    </div>
+                    <input type="password" 
+                           name="{{ key_name }}" 
+                           id="{{ key_name }}" 
+                           class="w-full bg-background border border-input rounded-lg px-4 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary" 
+                           placeholder="{{ placeholder }}" 
+                           autocomplete="off">
                 </div>
-                 <p class="text-xs text-muted-foreground font-mono">Current: {{ mask_key(key_name) }}</p>
-                 {# Use type="password" to obscure keys #}
-                <input type="password" name="{{ key_name }}" id="{{ key_name }}" class="mt-1 block w-full bg-background border border-input rounded-md p-2 font-mono" placeholder="{{ placeholder }}" autocomplete="off">
+                <form action="{{ url_for('admin.reset_setting', key_name=key_name) }}" method="POST" onsubmit="return confirm('Reset this key to .env value?')">
+                    {{ form.hidden_tag() }}
+                    <button type="submit" class="px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 rounded-lg transition-colors whitespace-nowrap">
+                        <i class="fa-solid fa-rotate-left mr-1"></i>Reset
+                    </button>
+                </form>
             </div>
             {% endmacro %}
 
-            {# Column 1 #}
-            <div class="space-y-6">
-                 {# Note: GEMINI_API_KEY is managed in ai_settings.html now #}
-                 {{ api_key_input('OPENAI_API_KEY', 'OpenAI API Key (Optional Fallback)', 'Enter new key to update') }}
-                 {{ api_key_input('YOUTUBE_API_KEYS', 'YouTube API Keys (comma-separated)', 'Enter new keys to update') }}
-                 {{ api_key_input('TELEGRAM_BOT_TOKEN', 'Telegram Bot Token', 'Enter new token to update') }}
-                 {# Add Cashfree Keys if managed here #}
-                 {{ api_key_input('CASHFREE_APP_ID', 'Cashfree App ID', 'Enter new ID to update') }}
-                 {{ api_key_input('CASHFREE_SECRET_KEY', 'Cashfree Secret Key', 'Enter new secret to update') }}
-            </div>
-            {# Column 2 #}
-            <div class="space-y-6">
-                 {{ api_key_input('RAZORPAY_KEY_ID', 'Razorpay Key ID (Legacy)', 'Enter new key to update') }}
-                 {{ api_key_input('RAZORPAY_KEY_SECRET', 'Razorpay Key Secret (Legacy)', 'Enter new key to update') }}
-                 {{ api_key_input('GOOGLE_CLIENT_ID', 'Google Client ID', 'Enter new ID to update') }}
-                 {{ api_key_input('GOOGLE_CLIENT_SECRET', 'Google Client Secret', 'Enter new secret to update') }}
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Column 1 -->
+                    <div class="space-y-4">
+                        {{ api_key_row('OPENAI_API_KEY', 'OpenAI API Key (Optional)', 'Leave blank to keep current', 'fa-robot') }}
+                        {{ api_key_row('YOUTUBE_API_KEYS', 'YouTube API Keys', 'Comma-separated keys', 'fa-brands fa-youtube') }}
+                        {{ api_key_row('TELEGRAM_BOT_TOKEN', 'Telegram Bot Token', 'Bot token from @BotFather', 'fa-brands fa-telegram') }}
+                        {{ api_key_row('CASHFREE_APP_ID', 'Cashfree App ID', 'Your Cashfree App ID', 'fa-credit-card') }}
+                    </div>
+                    
+                    <!-- Column 2 -->
+                    <div class="space-y-4">
+                        {{ api_key_row('CASHFREE_SECRET_KEY', 'Cashfree Secret Key', 'Your Cashfree Secret', 'fa-lock') }}
+                        {{ api_key_row('RAZORPAY_KEY_ID', 'Razorpay Key (Legacy)', 'Legacy payment key', 'fa-credit-card') }}
+                        {{ api_key_row('RAZORPAY_KEY_SECRET', 'Razorpay Secret (Legacy)', 'Legacy payment secret', 'fa-lock') }}
+                        {{ api_key_row('GOOGLE_CLIENT_ID', 'Google Client ID', 'OAuth Client ID', 'fa-brands fa-google') }}
+                        {{ api_key_row('GOOGLE_CLIENT_SECRET', 'Google Client Secret', 'OAuth Client Secret', 'fa-lock') }}
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="bg-card p-6 rounded-lg border">
-        <h3 class="text-lg font-semibold border-b pb-2 mb-4">SEO Settings</h3>
-        <div class="space-y-4">
+    <!-- SEO Settings -->
+    <div class="bg-card rounded-lg border border-border overflow-hidden">
+        <div class="bg-secondary px-6 py-4 border-b border-border">
+            <h3 class="text-lg font-semibold text-foreground flex items-center">
+                <i class="fa-solid fa-magnifying-glass mr-3 text-primary"></i>
+                SEO Settings
+            </h3>
+        </div>
+        <div class="p-6 space-y-6">
             <div>
-                <label for="seo_home_title" class="font-medium">Homepage Title</label>
-                 <input type="text" name="seo_home_title" id="seo_home_title" value="{{ settings.get('seo_home_title', '') }}" class="mt-1 block w-full bg-background border border-input rounded-md p-2">
+                <label for="seo_home_title" class="block text-sm font-medium text-foreground mb-2">
+                    Homepage Title
+                </label>
+                <input type="text" 
+                       name="seo_home_title" 
+                       id="seo_home_title" 
+                       value="{{ settings.get('seo_home_title', '') }}" 
+                       class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                       placeholder="Enter SEO title for homepage">
             </div>
             <div>
-                <label for="seo_home_description" class="font-medium">Homepage Description</label>
-                <textarea name="seo_home_description" id="seo_home_description" class="mt-1 block w-full bg-background border border-input rounded-md p-2" rows="2">{{ settings.get('seo_home_description', '') }}</textarea>
-             </div>
-             {# Add more SEO settings if needed #}
+                <label for="seo_home_description" class="block text-sm font-medium text-foreground mb-2">
+                    Homepage Description
+                </label>
+                <textarea name="seo_home_description" 
+                          id="seo_home_description" 
+                          class="w-full bg-background border border-input rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" 
+                          rows="2"
+                          placeholder="Enter meta description for homepage">{{ settings.get('seo_home_description', '') }}</textarea>
+            </div>
         </div>
     </div>
 
-    <div class="text-right mt-6">
-        <button type="submit" class="bg-primary text-primary-foreground px-6 py-2 rounded-lg font-semibold hover:bg-primary/90">Save All Settings</button>
+    <!-- Save Button -->
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-card p-6 rounded-lg border border-border">
+        <div>
+            <p class="font-semibold text-foreground">Ready to save?</p>
+            <p class="text-sm text-muted-foreground">All changes will be applied immediately</p>
+        </div>
+        <button type="submit" class="bg-primary text-primary-foreground px-8 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors shadow-lg whitespace-nowrap">
+            <i class="fa-solid fa-floppy-disk mr-2"></i>
+            Save All Settings
+        </button>
     </div>
 </form>
 
-{# Script for Checkbox hidden input handling #}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const checkboxes = document.querySelectorAll('input[type="checkbox"].sr-only.peer');
-        checkboxes.forEach(checkbox => {
-            const hiddenInput = checkbox.closest('label').querySelector('input[type="hidden"]');
-            if (hiddenInput) {
-                checkbox.addEventListener('change', function() {
-                    hiddenInput.disabled = this.checked;
-                });
-                // Initial state
-                hiddenInput.disabled = checkbox.checked;
-            }
-        });
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle checkbox hidden input logic
+    const checkboxes = document.querySelectorAll('input[type="checkbox"].sr-only.peer');
+    checkboxes.forEach(checkbox => {
+        const hiddenInput = checkbox.closest('label').querySelector('input[type="hidden"]');
+        if (hiddenInput) {
+            checkbox.addEventListener('change', function() {
+                hiddenInput.disabled = this.checked;
+            });
+            hiddenInput.disabled = checkbox.checked;
+        }
     });
+});
 </script>
 {% endblock %}
