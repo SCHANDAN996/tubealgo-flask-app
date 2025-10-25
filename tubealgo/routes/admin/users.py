@@ -1,22 +1,20 @@
 # tubealgo/routes/admin/users.py
 
-from flask import render_template, request, flash, redirect, url_for
+from flask import render_template, request, flash, redirect, url_for, current_app
 from flask_login import login_required
-# <<< बदलाव यहाँ है: FlaskForm जोड़ा गया >>>
-from flask_wtf import FlaskForm
-# <<< बदलाव यहाँ है: generate_csrf हटाया गया, क्योंकि फॉर्म इसे हैंडल करेगा >>>
-# from flask_wtf.csrf import generate_csrf
+from flask_wtf import FlaskForm # <<< यह इम्पोर्ट जोड़ा गया है
+# from flask_wtf.csrf import generate_csrf # <<< यह इम्पोर्ट हटाया गया है
+from wtforms import HiddenField # <<< यह इम्पोर्ट जोड़ा गया है (CSRFOnlyForm के लिए)
 from . import admin_bp
 from ... import db
 from ...decorators import admin_required
 from ...models import User, Competitor, DashboardCache, Goal, ContentIdea, Payment, SearchHistory, YouTubeChannel
 from datetime import datetime, timedelta, timezone
 
-# <<< बदलाव यहाँ है: CSRF चेक के लिए एक सामान्य फॉर्म बनाया गया >>>
+# <<< यह क्लास जोड़ी गई है >>>
 class CSRFOnlyForm(FlaskForm):
     """A simple form containing only the CSRF token field."""
-    pass # No fields needed, FlaskForm includes CSRF automatically
-
+    pass # FlaskForm में CSRF टोकन अपने आप शामिल होता है
 
 @admin_bp.route('/users')
 @login_required
@@ -41,7 +39,7 @@ def users():
 @admin_required
 def user_details(user_id):
     user = User.query.get_or_404(user_id)
-    # <<< बदलाव यहाँ है: CSRFOnlyForm() इंस्टैंस पास किया गया >>>
+    # <<< बदलाव यहाँ है: CSRFOnlyForm() इंस्टैंस बनाया गया >>>
     csrf_form = CSRFOnlyForm() # यह टेम्पलेट में {{ form.hidden_tag() }} के लिए टोकन जेनरेट करेगा
 
     remaining_days = None
@@ -86,7 +84,9 @@ def update_subscription(user_id):
         except (ValueError, TypeError):
             flash('Invalid number of days entered.', 'error')
     else:
-        flash("Invalid request or security token expired.", 'error')
+        # <<< बदलाव यहाँ है: CSRF एरर मैसेज >>>
+        current_app.logger.warning(f"CSRF validation failed for update_subscription (User ID: {user_id}): {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     return redirect(url_for('admin.user_details', user_id=user_id))
 
@@ -104,21 +104,29 @@ def delete_user(user_id):
 
         email = user.email
         try:
+            # Manually delete related data
             Competitor.query.filter_by(user_id=user.id).delete()
             DashboardCache.query.filter_by(user_id=user.id).delete()
             Goal.query.filter_by(user_id=user.id).delete()
             ContentIdea.query.filter_by(user_id=user.id).delete()
             SearchHistory.query.filter_by(user_id=user.id).delete()
+            # Delete channel *after* snapshots that might reference it via cascade? Check cascade config.
+            # If cascade isn't set up perfectly, delete snapshots first or handle FK constraints.
+            # Assuming cascade="all, delete-orphan" on User->YouTubeChannel relationship handles snapshots
             YouTubeChannel.query.filter_by(user_id=user.id).delete()
 
+            # Delete the user itself
             db.session.delete(user)
             db.session.commit()
             flash(f'User {email} and associated data have been permanently deleted.', 'success')
         except Exception as e:
             db.session.rollback()
+            current_app.logger.error(f"Error deleting user {email} (ID: {user_id}): {e}", exc_info=True)
             flash(f'Error deleting user {email}: {e}', 'error')
     else:
-        flash("Invalid request or security token expired.", 'error')
+        # <<< बदलाव यहाँ है: CSRF एरर मैसेज >>>
+        current_app.logger.warning(f"CSRF validation failed for delete_user (User ID: {user_id}): {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     return redirect(url_for('admin.users'))
 
@@ -131,11 +139,14 @@ def reset_user(user_id):
     form = CSRFOnlyForm()
     if form.validate_on_submit():
         try:
+            # Clear Google tokens
             user.google_access_token = None
             user.google_refresh_token = None
             user.google_token_expiry = None
 
+            # Delete related data
             if user.channel:
+                # Assuming cascade="all, delete-orphan" on User->YouTubeChannel handles snapshots
                 db.session.delete(user.channel) # Delete channel object directly
 
             Competitor.query.filter_by(user_id=user.id).delete()
@@ -148,9 +159,12 @@ def reset_user(user_id):
             flash(f'Account for {user.email} has been reset. All associated channel, competitor, dashboard, goal, idea, and search data has been cleared.', 'success')
         except Exception as e:
             db.session.rollback()
+            current_app.logger.error(f"Error resetting user {user.email} (ID: {user_id}): {e}", exc_info=True)
             flash(f'An error occurred while resetting the user: {e}', 'error')
     else:
-        flash("Invalid request or security token expired.", 'error')
+        # <<< बदलाव यहाँ है: CSRF एरर मैसेज >>>
+        current_app.logger.warning(f"CSRF validation failed for reset_user (User ID: {user_id}): {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     return redirect(url_for('admin.user_details', user_id=user_id))
 
@@ -166,21 +180,30 @@ def upgrade_user(user_id):
         new_plan = request.form.get('plan')
         if new_plan in ['free', 'creator', 'pro']:
             user.subscription_plan = new_plan
+            # Only set/extend expiry if upgrading TO a paid plan
             if new_plan != 'free':
+                # Check if current subscription exists and is valid (timezone aware)
                 end_date_aware = user.subscription_end_date # Assume UTC if naive
                 if user.subscription_end_date and user.subscription_end_date.tzinfo is None:
                     end_date_aware = user.subscription_end_date.replace(tzinfo=timezone.utc)
                 now_aware = datetime.now(timezone.utc)
+
+                # If current subscription is valid, extend it, otherwise start a new 30-day period
                 start_date = end_date_aware if end_date_aware and end_date_aware > now_aware else now_aware
                 user.subscription_end_date = start_date + timedelta(days=30)
+
             elif new_plan == 'free':
+                # Downgrading to free usually means clearing the end date
                 user.subscription_end_date = None
+
             db.session.commit()
             flash(f"User {user.email}'s plan has been updated to {new_plan.capitalize()}.", 'success')
         else:
             flash("Invalid plan selected.", 'error')
     else:
-        flash("Invalid request or security token expired.", 'error')
+        # <<< बदलाव यहाँ है: CSRF एरर मैसेज >>>
+        current_app.logger.warning(f"CSRF validation failed for upgrade_user (User ID: {user_id}): {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     return redirect(url_for('admin.user_details', user_id=user_id))
 
@@ -200,6 +223,8 @@ def toggle_user_status(user_id):
             flash(f"User {user.email} has been reactivated.", 'success')
         db.session.commit()
     else:
-        flash("Invalid request or security token expired.", 'error')
+        # <<< बदलाव यहाँ है: CSRF एरर मैसेज >>>
+        current_app.logger.warning(f"CSRF validation failed for toggle_user_status (User ID: {user_id}): {form.errors}")
+        flash("Invalid request or security token expired. Please try again.", 'error')
 
     return redirect(url_for('admin.user_details', user_id=user.id))
