@@ -4,7 +4,7 @@ import re
 import threading
 import json
 import uuid
-from datetime import timedelta, datetime, date, timezone # timezone इम्पोर्ट करें
+from datetime import timedelta, datetime, date, timezone
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, abort, current_app
 from flask_login import login_required, current_user
 from google.auth.exceptions import RefreshError
@@ -14,11 +14,11 @@ from ..services.youtube_manager import (
     get_user_videos, update_video_details, get_single_video,
     upload_video, set_video_thumbnail
 )
-from ..models import get_setting, log_system_event, User # User इम्पोर्ट करें
+from ..models import get_setting, log_system_event, User
 from .utils import get_credentials
 from ..jobs import bulk_edit_videos
-from .. import db # db इम्पोर्ट करें
-import traceback # Traceback इम्पोर्ट करें
+from .. import db
+import traceback
 
 video_manager_bp = Blueprint('manager', __name__)
 
@@ -56,10 +56,9 @@ def _upload_to_youtube_in_background(app, creds_json, video_filepath, thumbnail_
                     print(f"BACKGROUND TASK: Thumbnail set for video ID: {video_id}")
 
         except Exception as e:
-            log_system_event("Exception in background upload task", "ERROR", details=str(e), traceback=traceback.format_exc()) # Added traceback
+            log_system_event("Exception in background upload task", "ERROR", details=str(e), traceback=traceback.format_exc())
 
         finally:
-            # टेम्परेरी फाइल्स और फोल्डर क्लीनअप
             folder_path = os.path.dirname(video_filepath)
             if os.path.exists(video_filepath):
                 try:
@@ -76,7 +75,6 @@ def _upload_to_youtube_in_background(app, creds_json, video_filepath, thumbnail_
                     log_system_event("Cleanup Error", "ERROR", f"Failed to delete temp thumbnail file: {thumbnail_filepath}. Error: {e}")
 
             try:
-                # Delete folder only if it exists and is empty
                 if os.path.exists(folder_path) and not os.listdir(folder_path):
                     os.rmdir(folder_path)
                     print(f"BACKGROUND TASK: Deleted temp directory: {folder_path}")
@@ -122,32 +120,26 @@ def manage_videos():
         flash('An unexpected error occurred while fetching videos. Our team has been notified.', 'error')
         videos = []
 
-
     form = FlaskForm()
 
-    # --- एडमिन सेटिंग्स से लिमिट्स प्राप्त करें ---
+    # Get limits from admin settings
     limit_dict = {}
-    limits_for_js = {}
     try:
         limit_dict['free'] = int(get_setting('bulk_edit_limit_free', '0'))
         limit_dict['creator'] = int(get_setting('bulk_edit_limit_creator', '20'))
         limit_dict['pro'] = int(get_setting('bulk_edit_limit_pro', '50'))
-
-        limits_for_js = {plan: -1 if limit == -1 else limit for plan, limit in limit_dict.items()}
-
     except (ValueError, TypeError):
         limit_dict = {'free': 0, 'creator': 20, 'pro': 50}
-        limits_for_js = limit_dict.copy()
         flash("Error reading bulk edit limits from settings, using defaults.", "warning")
 
-    # --- दैनिक सीमाएँ दिखाने के लिए (डिस्क्लेमर में) ---
+    # Daily limits display
     daily_limits_display = {
         'free': "Unlimited" if limit_dict['free'] == -1 else str(limit_dict['free']),
         'creator': "Unlimited" if limit_dict['creator'] == -1 else str(limit_dict['creator']),
         'pro': "Unlimited" if limit_dict['pro'] == -1 else str(limit_dict['pro'])
     }
 
-    # --- आज इस्तेमाल किए गए एडिट्स ---
+    # Today's usage
     today = date.today()
     reset_performed = False
     if current_user.last_usage_date != today:
@@ -158,7 +150,6 @@ def manage_videos():
     try:
         if reset_performed:
             db.session.commit()
-        # Re-fetch user in case the session object is stale after commit/rollback
         user_for_count = User.query.get(current_user.id)
         edits_used_today = user_for_count.daily_bulk_edits or 0
     except Exception as e:
@@ -167,10 +158,9 @@ def manage_videos():
         edits_used_today = 0
         flash("Could not update usage counters, showing defaults.", "warning")
 
-
-    # --- JS के लिए JSON डेटा तैयार करें ---
+    # Prepare data for JavaScript
     page_data_for_js = {
-         'dailyLimit': limits_for_js.get(current_user.subscription_plan, 0),
+         'dailyLimit': limit_dict.get(current_user.subscription_plan, 0),
          'editsUsedToday': edits_used_today,
          'userPlan': current_user.subscription_plan
     }
@@ -187,7 +177,6 @@ def manage_videos():
 @video_manager_bp.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
-    # यह फंक्शन पहले जैसा ही रहेगा...
     if not get_setting('feature_video_upload', True):
         abort(404)
 
@@ -239,7 +228,6 @@ def upload():
                     if publish_at_time.tzinfo is None:
                         publish_at_time = publish_at_time.replace(tzinfo=timezone.utc)
                 except ValueError:
-                    # Clean up saved file if date is invalid
                     if os.path.exists(video_filepath): os.remove(video_filepath)
                     if thumbnail_filepath and os.path.exists(thumbnail_filepath): os.remove(thumbnail_filepath)
                     try:
@@ -282,7 +270,6 @@ def upload():
 @video_manager_bp.route('/edit/<video_id>', methods=['GET', 'POST'])
 @login_required
 def edit_video(video_id):
-    # यह फंक्शन पहले जैसा ही रहेगा...
     creds = get_credentials()
     if not creds:
         flash('Please connect your Google account to manage videos.', 'warning')
@@ -326,7 +313,7 @@ def edit_video(video_id):
         form.tags.data = ", ".join(video_details.get('snippet', {}).get('tags', []))
         form.visibility.data = current_visibility
         if is_scheduled and publish_at_dt:
-             form.publish_at.data = publish_at_dt.replace(tzinfo=None) # For datetime-local input
+             form.publish_at.data = publish_at_dt.replace(tzinfo=None)
 
     if form.validate_on_submit():
         visibility_choice = form.visibility.data
@@ -362,7 +349,6 @@ def edit_video(video_id):
 
         thumbnail_file = form.thumbnail.data
         if thumbnail_file and thumbnail_file.filename and not is_video_short:
-            # Save thumbnail temporarily and upload (with cleanup)
             upload_folder = os.path.join(current_app.instance_path, 'uploads', str(uuid.uuid4()))
             os.makedirs(upload_folder, exist_ok=True)
             thumb_filename = f"thumb_{uuid.uuid4().hex}_{thumbnail_file.filename}"
@@ -372,8 +358,6 @@ def edit_video(video_id):
                 thumb_result = set_video_thumbnail(creds, video_id, thumbnail_filepath)
                 if 'error' in thumb_result:
                      flash(f"Error setting thumbnail: {thumb_result['error']}", 'error')
-                     # Consider redirecting for auth errors here too?
-                     # if 'invalid_grant'... return redirect(...)
                 else:
                     flash('Thumbnail updated successfully!', 'success')
             except Exception as e:
@@ -389,13 +373,11 @@ def edit_video(video_id):
                  except OSError as e:
                      log_system_event("Cleanup Error", "WARNING", f"Could not remove temp dir {upload_folder}: {e}")
 
-        # Redirect after processing everything
         return redirect(url_for('manager.manage_videos'))
 
-    elif request.method == 'POST': # If validation fails
+    elif request.method == 'POST':
         flash("Form validation failed. Please check the fields.", "error")
 
-    # Render for GET or failed POST validation
     return render_template(
         'edit_video.html',
         video=video_details,
@@ -409,7 +391,6 @@ def edit_video(video_id):
 @video_manager_bp.route('/videos/bulk-edit', methods=['POST'])
 @login_required
 def bulk_edit_route():
-    # यह फंक्शन पहले से अपडेटेड है और सही है
     data = request.json
     video_ids = data.get('video_ids')
     operations = data.get('operations')
@@ -419,7 +400,7 @@ def bulk_edit_route():
 
     num_videos_to_edit = len(video_ids)
 
-    # --- लिमिट चेक लॉजिक ---
+    # Limit check logic
     user_plan = current_user.subscription_plan
     limit = 0
     try:
@@ -427,16 +408,14 @@ def bulk_edit_route():
             limit = int(get_setting('bulk_edit_limit_pro', '50'))
         elif user_plan == 'creator':
             limit = int(get_setting('bulk_edit_limit_creator', '20'))
-        else: # free plan
+        else:
             limit = int(get_setting('bulk_edit_limit_free', '0'))
-        # Handle -1 for unlimited
         if limit == -1: limit = float('inf')
 
     except (ValueError, TypeError):
-         limit = float('inf') if user_plan == 'pro' else (20 if user_plan == 'creator' else 0) # Fallback defaults
+         limit = float('inf') if user_plan == 'pro' else (20 if user_plan == 'creator' else 0)
          log_system_event(f"Invalid bulk edit limit setting for plan '{user_plan}'. Using default: {limit if limit != float('inf') else -1}", "WARNING")
 
-    # आज की तारीख चेक करें और ज़रूरत पड़ने पर काउंटर रीसेट करें
     today = date.today()
     reset_performed = False
     if current_user.last_usage_date != today:
@@ -446,9 +425,7 @@ def bulk_edit_route():
 
     try:
         if reset_performed:
-             db.session.commit() # Commit reset first
-        # Re-fetch user to get the potentially reset counter
-        # Use a fresh query to avoid potential stale data in current_user session object
+             db.session.commit()
         user_for_count = User.query.get(current_user.id)
         edits_used_today = user_for_count.daily_bulk_edits or 0
     except Exception as e:
@@ -456,32 +433,24 @@ def bulk_edit_route():
          log_system_event("Failed to reset/refresh daily counters", "ERROR", {'user_id': current_user.id, 'error': str(e)})
          return jsonify({'error': 'Could not process request due to a temporary issue (counter error).'}), 500
 
-
     remaining_edits = float('inf') if limit == float('inf') else max(0, limit - edits_used_today)
 
-    # लिमिट चेक करें
     if num_videos_to_edit > remaining_edits:
         limit_str = f"{int(limit)}/day" if limit != float('inf') else "Unlimited"
         return jsonify({
             'error': f'Daily bulk edit limit exceeded for {user_plan.capitalize()} plan. You can edit {int(remaining_edits)} more videos today (Limit: {limit_str}).'
-        }), 429 # Too Many Requests
+        }), 429
 
-    # लिमिट ठीक है, काउंटर बढ़ाएं और टास्क शुरू करें
     try:
-        # Update counter on the potentially re-fetched user object
         user_for_count.daily_bulk_edits = edits_used_today + num_videos_to_edit
         db.session.commit()
     except Exception as e:
          db.session.rollback()
          log_system_event("Failed to update bulk edit counter", "ERROR", {'user_id': current_user.id, 'error': str(e)})
          return jsonify({'error': 'Could not process request due to a temporary issue (counter update failed).'}), 500
-    # --- बदलाव खत्म ---
 
-
-    # बैकग्राउंड टास्क शुरू करें
     bulk_edit_videos.delay(current_user.id, operations, video_ids)
 
     limit_str = f"{int(limit)}/day" if limit != float('inf') else "Unlimited"
-    # Use the updated counter value in the response
     updated_edits_used = edits_used_today + num_videos_to_edit
     return jsonify({'message': f'Bulk update for {num_videos_to_edit} videos scheduled successfully! You have used {updated_edits_used}/{limit_str} of your daily edits for the {user_plan.capitalize()} plan. You will be notified on Telegram upon completion.'}), 202
