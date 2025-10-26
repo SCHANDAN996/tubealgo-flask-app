@@ -293,11 +293,12 @@
 </div>
 
 <script>
-    const PAGE_DATA = {{ page_data_json|safe }};
+    // Get data from Python backend
+    const PAGE_DATA = typeof pageDataForJS !== 'undefined' ? pageDataForJS : {{ page_data_json|default('{}')|safe }};
     
     function videoManager() {
         return {
-            videos: PAGE_DATA.videos || [],
+            videos: {{ videos|default('[]')|tojson }},
             filter: 'all',
             sortBy: 'newest',
             selectedVideos: [],
