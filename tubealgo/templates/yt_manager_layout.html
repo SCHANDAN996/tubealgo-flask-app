@@ -2,21 +2,23 @@
 
 {% block app_content %}
 <div class="max-w-7xl mx-auto">
-    <div class="text-center mb-8">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 bg-brand-red/10 text-brand-red">
-            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="w-8 h-8">
+    {# Compact Header Section #}
+    <div class="flex items-center gap-3 mb-6">
+        <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-brand-red/10 text-brand-red">
+            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="w-6 h-6">
         </div>
-        <h1 class="text-4xl font-bold text-foreground font-display">YT Manager</h1>
-        <p class="text-lg text-muted-foreground mt-2">Manage your YouTube videos, playlists, and run tests.</p>
+        <div>
+            <h1 class="text-2xl font-bold text-foreground font-display">YT Manager</h1>
+            <p class="text-sm text-muted-foreground">Manage your videos, playlists, and run tests</p>
+        </div>
     </div>
 
-    {# *** FIX: Added overflow-x-auto *** #}
+    {# Tab Navigation #}
     <div class="border-b border-border mb-6">
         <nav class="-mb-px flex space-x-6 overflow-x-auto">
-
             <a href="{{ url_for('manager.manage_videos') }}"
-               class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
-                      {% if request.endpoint.startswith('manager.') %}
+               class="shrink-0 border-b-2 px-1 pb-3 text-sm font-medium whitespace-nowrap
+                      {% if request.endpoint.startswith('manager.') and not request.endpoint.startswith('manager.upload') %}
                            border-primary text-primary
                       {% else %}
                            border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
@@ -25,7 +27,7 @@
             </a>
 
             <a href="{{ url_for('playlist_manager.manage_playlists') }}"
-               class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
+               class="shrink-0 border-b-2 px-1 pb-3 text-sm font-medium whitespace-nowrap
                       {% if request.endpoint.startswith('playlist_manager.') %}
                         border-primary text-primary
                       {% else %}
@@ -34,22 +36,8 @@
                 Playlists
             </a>
 
-            {# --- यह पूरा 'a' टैग हटा दिया गया है या कमेंट कर दिया गया है --- #}
-            {#
-            <a href="{{ url_for('comment.comment_manager') }}"
-                class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
-                      {% if request.endpoint.startswith('comment.') %}
-                        border-primary text-primary
-                      {% else %}
-                           border-transparent text-muted-foreground hover:border-gray-300 hover:text-foreground
-                      {% endif %}">
-                Comments
-            </a>
-            #}
-            {# --- यहाँ तक --- #}
-
             <a href="{{ url_for('ab_test.dashboard') }}"
-               class="shrink-0 border-b-2 px-1 pb-4 text-sm font-medium
+               class="shrink-0 border-b-2 px-1 pb-3 text-sm font-medium whitespace-nowrap
                       {% if request.endpoint.startswith('ab_test.') %}
                         border-primary text-primary
                       {% else %}
