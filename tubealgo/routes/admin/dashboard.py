@@ -1,198 +1,179 @@
 # tubealgo/routes/admin/dashboard.py
 
-from flask import render_template, jsonify # jsonify को import करें
+from flask import render_template
 from flask_login import login_required
 from . import admin_bp
 from ... import db
 from ...decorators import admin_required
-# User, Payment, func, cast, Date, datetime, timedelta, log_system_event को import करें
-from ...models import User, Payment, SubscriptionPlan, APIKeyStatus, get_config_value, log_system_event
-from sqlalchemy import func, cast, Date
-from datetime import date, datetime, timedelta
+from ...models import User, APIKeyStatus, get_config_value
+from sqlalchemy import func
+from datetime import date, datetime
 import pytz
-import json # json को import करें
-import traceback # traceback को import करें
-from flask_wtf import FlaskForm # FlaskForm को import करें
-
-class CSRFOnlyForm(FlaskForm): # CSRFOnlyForm की परिभाषा
-    pass
 
 @admin_bp.route('/')
 @login_required
 @admin_required
 def dashboard():
+    """
+    Main admin dashboard with statistics and API status.
+    
+    Displays:
+    - Total users, subscribed users, new users today
+    - Recent 5 registered users
+    - YouTube API key status and quota usage
+    
+    Chart data endpoints are in system.py to avoid route duplication.
+    """
+    
+    # ==================== USER STATISTICS ====================
     total_users = User.query.count()
     subscribed_users = User.query.filter(User.subscription_plan != 'free').count()
     users_today = User.query.filter(func.date(User.created_at) == date.today()).count()
-    recent_users = User.query.order_by(User.id.desc()).limit(5).all()
+    
+    # Recent users (last 5 registered)
+    recent_users = User.query.order_by(User.created_at.desc()).limit(5).all()
 
+    # ==================== YOUTUBE API KEY STATUS ====================
+    # Get API keys from config
     api_keys_str = get_config_value('YOUTUBE_API_KEYS', '')
     api_keys_list = [key.strip() for key in api_keys_str.split(',') if key.strip()]
-
+    
+    # Reset exhausted keys if it's a new day (Pacific Time zone)
     try:
         pacific_tz = pytz.timezone('America/Los_Angeles')
         pacific_now = datetime.now(pacific_tz)
+        
+        # Get midnight Pacific Time
         last_reset_pacific = pacific_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Convert to UTC for database comparison
         last_reset_utc = last_reset_pacific.astimezone(pytz.utc)
 
-        APIKeyStatus.query.filter(
+        # Reset any keys that were exhausted before today (Pacific time)
+        reset_count = APIKeyStatus.query.filter(
             APIKeyStatus.status == 'exhausted',
             APIKeyStatus.last_failure_at < last_reset_utc
-        ).update({'status': 'active', 'last_failure_at': None})
-        db.session.commit()
+        ).update({
+            'status': 'active', 
+            'last_failure_at': None
+        })
+        
+        if reset_count > 0:
+            db.session.commit()
+            print(f"Reset {reset_count} exhausted API keys for new day (Pacific Time)")
+        
     except Exception as e:
-        print(f"Timezone conversion or DB reset failed: {e}")
+        print(f"Error during API key daily reset: {e}")
         db.session.rollback()
 
+    # Helper function to mask YouTube API keys for display
     def mask_key_yt(key):
+        """
+        Mask YouTube API key for secure display.
+        Shows: AIzaSyAB...xyz3
+        """
         if key and len(key) > 12:
             return f"{key[:8]}...{key[-4:]}"
         return "Invalid Key Format"
-
+    
+    # Get masked key identifiers
     key_identifiers = [mask_key_yt(key) for key in api_keys_list]
-    key_statuses_query = APIKeyStatus.query.filter(APIKeyStatus.key_identifier.in_(key_identifiers)).all()
-    key_status_map = {status.key_identifier: status for status in key_statuses_query}
+    
+    # Get status for each key from database
+    key_statuses_query = APIKeyStatus.query.filter(
+        APIKeyStatus.key_identifier.in_(key_identifiers)
+    ).all()
+    
+    # Create a dictionary for quick lookup in template
+    key_status_map = {
+        status.key_identifier: status 
+        for status in key_statuses_query
+    }
+    
+    # Count how many keys are exhausted today
+    exhausted_today_count = sum(
+        1 for status in key_status_map.values() 
+        if status.status == 'exhausted'
+    )
 
-    exhausted_today_count = sum(1 for status in key_status_map.values() if status.status == 'exhausted')
-
-    form = CSRFOnlyForm() # फॉर्म इंस्टेंस बनाएं
-
-    return render_template('admin/dashboard.html',
-                           total_users=total_users,
-                           subscribed_users=subscribed_users,
-                           users_today=users_today,
-                           recent_users=recent_users,
-                           api_key_count=len(api_keys_list),
-                           key_identifiers=key_identifiers,
-                           key_status_map=key_status_map,
-                           exhausted_today_count=exhausted_today_count,
-                           form=form) # फॉर्म पास करें
-
-
-@admin_bp.route('/data/user_growth')
-@login_required
-@admin_required
-def user_growth_data():
-    thirty_days_ago_dt = datetime.utcnow().date() - timedelta(days=29)
-    user_counts = {}
-    try:
-        user_counts_query = db.session.query(
-            func.count(User.id), cast(User.created_at, Date)
-        ).filter(
-            User.created_at >= thirty_days_ago_dt
-        ).group_by(
-            cast(User.created_at, Date)
-        ).order_by(
-            cast(User.created_at, Date)
-        ).all()
-        user_counts = {day_date: count for count, day_date in user_counts_query}
-    except Exception as e:
-        log_system_event("Error fetching user growth data", "ERROR", details=str(e), traceback_info=traceback.format_exc())
-        db.session.rollback()
-        user_counts = {}
-
-    labels = []
-    data = []
-    for i in range(30):
-        current_date = thirty_days_ago_dt + timedelta(days=i)
-        labels.append(current_date.strftime('%d %b'))
-        data.append(user_counts.get(current_date, 0))
-
-    return jsonify({'labels': labels, 'data': data})
+    # ==================== RENDER TEMPLATE ====================
+    return render_template(
+        'admin/dashboard.html', 
+        # User statistics
+        total_users=total_users,
+        subscribed_users=subscribed_users,
+        users_today=users_today,
+        recent_users=recent_users,
+        # API key information
+        api_key_count=len(api_keys_list),
+        key_identifiers=key_identifiers,
+        key_status_map=key_status_map,
+        exhausted_today_count=exhausted_today_count
+    )
 
 
-@admin_bp.route('/data/plan_distribution')
-@login_required
-@admin_required
-def plan_distribution_data():
-    plan_data = {}
-    try:
-        plan_counts = db.session.query(
-            User.subscription_plan,
-            func.count(User.id)
-        ).group_by(User.subscription_plan).all()
-        plan_data = {plan: count for plan, count in plan_counts}
-    except Exception as e:
-        log_system_event("Error fetching plan distribution data", "ERROR", details=str(e))
-        db.session.rollback()
-        plan_data = {}
+# ==================== IMPORTANT NOTE ====================
+# Chart data endpoints (user_growth_data, plan_distribution_data) 
+# are defined in system.py to avoid route duplication errors.
+# 
+# Routes in system.py:
+# - /data/user_growth       -> Returns JSON for user growth chart
+# - /data/plan_distribution -> Returns JSON for plan pie chart
+#
+# These are called via fetch() from dashboard.html
+# ========================================================
+```
 
-    labels = ['Free', 'Creator', 'Pro']
-    data = [plan_data.get('free', 0), plan_data.get('creator', 0), plan_data.get('pro', 0)]
-    return jsonify({'labels': labels, 'data': data})
+---
 
+## ✅ **Key Features:**
 
-@admin_bp.route('/data/daily_plan_signups')
-@login_required
-@admin_required
-def daily_plan_signup_data():
-    """ पिछले 30 दिनों में हर प्लान के लिए दैनिक नए यूजर/सब्सक्रिप्शन का डेटा देता है """
-    try:
-        thirty_days_ago_dt = datetime.utcnow().date() - timedelta(days=29)
+### 📊 **Statistics Calculated:**
+1. **Total Users** - All registered users
+2. **Subscribed Users** - Users with paid plans (creator/pro)
+3. **New Users Today** - Signups from current day
+4. **Recent Users** - Last 5 registered users
 
-        # 1. नए Free यूजर्स की गिनती (User टेबल से)
-        free_user_counts_query = db.session.query(
-            func.count(User.id),
-            cast(User.created_at, Date)
-        ).filter(
-            User.created_at >= thirty_days_ago_dt,
-            User.subscription_plan == 'free' # केवल फ्री यूजर्स
-        ).group_by(
-            cast(User.created_at, Date)
-        ).order_by(
-            cast(User.created_at, Date)
-        ).all()
-        free_user_counts = {day_date: count for count, day_date in free_user_counts_query}
+### 🔑 **API Key Management:**
+1. **Automatic Daily Reset** - Resets exhausted keys at midnight (Pacific Time)
+2. **Secure Masking** - Shows only `AIzaSyAB...xyz3` format
+3. **Status Tracking** - Active/Exhausted for each key
+4. **Quota Estimation** - Based on number of exhausted keys
 
-        # 2. नए Creator और Pro सब्सक्रिप्शन की गिनती (Payment टेबल से - सफल पेमेंट्स)
-        paid_subs_counts_query = db.session.query(
-            func.count(Payment.id),
-            cast(Payment.created_at, Date),
-            Payment.plan_id # प्लान के अनुसार ग्रुप करने के लिए
-        ).filter(
-            Payment.created_at >= thirty_days_ago_dt,
-            Payment.status == 'captured', # केवल सफल पेमेंट्स
-            Payment.plan_id.in_(['creator', 'pro']) # केवल पेड प्लान्स
-        ).group_by(
-            cast(Payment.created_at, Date),
-            Payment.plan_id
-        ).order_by(
-            cast(Payment.created_at, Date)
-        ).all()
+### 🔒 **Security:**
+- `@login_required` - Must be logged in
+- `@admin_required` - Must be admin user
+- **Key masking** - Never exposes full API keys
+- **Error handling** - Graceful fallback on failures
 
-        creator_subs_counts = {}
-        pro_subs_counts = {}
-        for count, day_date, plan_id in paid_subs_counts_query:
-            if plan_id == 'creator':
-                creator_subs_counts[day_date] = count
-            elif plan_id == 'pro':
-                pro_subs_counts[day_date] = count
+---
 
-        # 3. डेटा को Chart.js के लिए फॉर्मेट करें
-        labels = []
-        free_data = []
-        creator_data = []
-        pro_data = []
+## 🎯 **How Data Flows:**
+```
+1. Browser loads /admin
+   ↓
+2. dashboard() function executes
+   ↓
+3. Calculates stats from database
+   ↓
+4. Renders dashboard.html
+   ↓
+5. JavaScript in dashboard.html fetches chart data
+   ↓
+6. Calls /data/user_growth (in system.py)
+   ↓
+7. Calls /data/plan_distribution (in system.py)
+   ↓
+8. Charts render with data
+```
 
-        for i in range(30):
-            current_date = thirty_days_ago_dt + timedelta(days=i)
-            labels.append(current_date.strftime('%d %b'))
-            free_data.append(free_user_counts.get(current_date, 0))
-            creator_data.append(creator_subs_counts.get(current_date, 0))
-            pro_data.append(pro_subs_counts.get(current_date, 0))
+---
 
-        return jsonify({
-            'labels': labels,
-            'datasets': {
-                'free': free_data,
-                'creator': creator_data,
-                'pro': pro_data
-            }
-        })
-
-    except Exception as e:
-        # एरर लॉग करें
-        from ...models import log_system_event # log_system_event को इम्पोर्ट करें
-        log_system_event("Error fetching daily plan signup data for admin", "ERROR", details=str(e), traceback_info=traceback.format_exc())
-        # एरर के साथ खाली डेटा लौटाएं
-        return jsonify({'error': 'Could not load plan signup data.', 'labels': [], 'datasets': {'free': [], 'creator': [], 'pro': []}}), 500
+## 📁 **Complete File Structure:**
+```
+tubealgo/routes/admin/
+├── __init__.py              # Blueprint creation
+├── dashboard.py             # ← THIS FILE (main dashboard)
+├── system.py                # Chart APIs + settings
+├── users.py                 # User management
+└── monetization.py          # Plans, coupons, payments
