@@ -87,6 +87,24 @@
     </div>
 </div>
 
+<!-- Daily Plan Signups Chart (New Feature) -->
+<div class="grid grid-cols-1 mb-6">
+    <div class="bg-card rounded-lg border border-border overflow-hidden">
+        <div class="bg-secondary px-6 py-4 border-b border-border">
+            <h3 class="font-semibold text-foreground flex items-center">
+                <i class="fa-solid fa-chart-area mr-3 text-primary"></i>
+                Daily Plan Signups (Last 30 Days)
+            </h3>
+            <p class="text-xs text-muted-foreground mt-1">Track new signups for each plan</p>
+        </div>
+        <div class="p-6">
+            <div class="h-64 md:h-80">
+                <canvas id="dailyPlanSignupsChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Bottom Section -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
     <!-- YouTube API Status -->
@@ -236,6 +254,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const isDarkMode = document.documentElement.classList.contains('dark');
     const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
     const labelColor = isDarkMode ? '#cbd5e1' : '#475569';
+    
+    const tooltipConfig = {
+        backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+        titleColor: isDarkMode ? '#f1f5f9' : '#0f172a',
+        bodyColor: isDarkMode ? '#cbd5e1' : '#475569',
+        borderColor: gridColor,
+        borderWidth: 1,
+        padding: 12
+    };
 
     // 1. User Growth Chart
     fetch("{{ url_for('admin.user_growth_data') }}")
@@ -271,36 +298,17 @@ document.addEventListener('DOMContentLoaded', function () {
                     scales: {
                         y: {
                             beginAtZero: true,
-                            ticks: {
-                                precision: 0,
-                                color: labelColor
-                            },
-                            grid: {
-                                color: gridColor
-                            }
+                            ticks: { precision: 0, color: labelColor },
+                            grid: { color: gridColor }
                         },
                         x: {
-                            ticks: {
-                                color: labelColor
-                            },
-                            grid: {
-                                display: false
-                            }
+                            ticks: { color: labelColor },
+                            grid: { display: false }
                         }
                     },
                     plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-                            titleColor: isDarkMode ? '#f1f5f9' : '#0f172a',
-                            bodyColor: isDarkMode ? '#cbd5e1' : '#475569',
-                            borderColor: gridColor,
-                            borderWidth: 1,
-                            padding: 12,
-                            displayColors: false
-                        }
+                        legend: { display: false },
+                        tooltip: { ...tooltipConfig, displayColors: false }
                     }
                 }
             });
@@ -324,9 +332,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         label: 'User Plans',
                         data: apiData.data,
                         backgroundColor: [
-                            'rgba(107, 114, 128, 0.8)', // Gray for Free
-                            'rgba(34, 197, 94, 0.8)',   // Green for Creator
-                            'rgba(139, 92, 246, 0.8)'   // Purple for Pro
+                            'rgba(107, 114, 128, 0.8)',
+                            'rgba(34, 197, 94, 0.8)',
+                            'rgba(139, 92, 246, 0.8)'
                         ],
                         borderColor: isDarkMode ? '#1e293b' : '#ffffff',
                         borderWidth: 3,
@@ -342,20 +350,13 @@ document.addEventListener('DOMContentLoaded', function () {
                             labels: {
                                 padding: 15,
                                 color: labelColor,
-                                font: {
-                                    size: 12
-                                },
+                                font: { size: 12 },
                                 usePointStyle: true,
                                 pointStyle: 'circle'
                             }
                         },
                         tooltip: {
-                            backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-                            titleColor: isDarkMode ? '#f1f5f9' : '#0f172a',
-                            bodyColor: isDarkMode ? '#cbd5e1' : '#475569',
-                            borderColor: gridColor,
-                            borderWidth: 1,
-                            padding: 12,
+                            ...tooltipConfig,
                             displayColors: true,
                             callbacks: {
                                 label: function(context) {
@@ -377,53 +378,85 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<div class="flex items-center justify-center h-full text-muted-foreground"><p>Failed to load chart data</p></div>';
         });
 
+    // 3. Daily Plan Signups Chart (NEW)
+    fetch("{{ url_for('admin.daily_plan_signup_data') }}")
+        .then(response => response.json())
+        .then(apiData => {
+            const ctx = document.getElementById('dailyPlanSignupsChart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: apiData.labels,
+                    datasets: [
+                        {
+                            label: 'Free',
+                            data: apiData.datasets.free,
+                            borderColor: 'rgba(107, 114, 128, 0.8)',
+                            backgroundColor: 'rgba(107, 114, 128, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Creator',
+                            data: apiData.datasets.creator,
+                            borderColor: 'rgba(34, 197, 94, 0.8)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Pro',
+                            data: apiData.datasets.pro,
+                            borderColor: 'rgba(139, 92, 246, 0.8)',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0, color: labelColor },
+                            grid: { color: gridColor }
+                        },
+                        x: {
+                            ticks: { color: labelColor },
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: labelColor,
+                                padding: 15,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: tooltipConfig
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching daily plan signups data:', error);
+            document.getElementById('dailyPlanSignupsChart').parentElement.innerHTML = 
+                '<div class="flex items-center justify-center h-full text-muted-foreground"><p>Failed to load chart data</p></div>';
+        });
+
     // Update charts on theme change
     window.addEventListener('theme-changed', function() {
-        location.reload(); // Simple solution: reload page on theme change
+        location.reload();
     });
 });
 </script>
 {% endblock %}
-```
-
----
-
-## ✅ **Features:**
-
-### 📊 **KPI Cards:**
-- Total Users
-- Subscribed Users (with percentage)
-- New Users Today
-- Hover effects
-
-### 📈 **Charts:**
-- **User Growth Chart** - Last 30 days (line chart with gradient)
-- **Plan Distribution** - Doughnut chart with percentages
-
-### 🔑 **API Status:**
-- Quota usage progress bar
-- Individual key status (Active/Exhausted)
-- Link to Google Cloud Console
-- Scrollable key list
-
-### 👥 **Recent Users Table:**
-- Avatar with initials
-- Admin badge
-- Plan badge with colors
-- Responsive (hides columns on mobile)
-- View button
-
-### 🎨 **Design:**
-- Fully responsive
-- Dark mode support
-- Smooth animations
-- Hover effects
-- Color-coded elements
-
----
-
-## 🚀 **Deployment:**
-
-Is file ko replace kar dijiye:
-```
-tubealgo/templates/admin/dashboard.html
