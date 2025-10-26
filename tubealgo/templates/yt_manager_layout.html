@@ -2,22 +2,19 @@
 
 {% block app_content %}
 <div class="max-w-7xl mx-auto">
-    {# Compact Header Section #}
-    <div class="flex items-center gap-3 mb-6">
-        <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-brand-red/10 text-brand-red">
-            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="w-6 h-6">
+    {# Compact Centered Header Section #}
+    <div class="flex items-center justify-center gap-2 mb-4">
+        <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-red/10 text-brand-red">
+            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="w-5 h-5">
         </div>
-        <div>
-            <h1 class="text-2xl font-bold text-foreground font-display">YT Manager</h1>
-            <p class="text-sm text-muted-foreground">Manage your videos, playlists, and run tests</p>
-        </div>
+        <h1 class="text-xl font-bold text-foreground font-display">YT Manager</h1>
     </div>
 
     {# Tab Navigation #}
-    <div class="border-b border-border mb-6">
-        <nav class="-mb-px flex space-x-6 overflow-x-auto">
+    <div class="border-b border-border mb-4">
+        <nav class="-mb-px flex justify-center space-x-6 overflow-x-auto">
             <a href="{{ url_for('manager.manage_videos') }}"
-               class="shrink-0 border-b-2 px-1 pb-3 text-sm font-medium whitespace-nowrap
+               class="shrink-0 border-b-2 px-1 pb-2 text-sm font-medium whitespace-nowrap
                       {% if request.endpoint.startswith('manager.') and not request.endpoint.startswith('manager.upload') %}
                            border-primary text-primary
                       {% else %}
@@ -27,7 +24,7 @@
             </a>
 
             <a href="{{ url_for('playlist_manager.manage_playlists') }}"
-               class="shrink-0 border-b-2 px-1 pb-3 text-sm font-medium whitespace-nowrap
+               class="shrink-0 border-b-2 px-1 pb-2 text-sm font-medium whitespace-nowrap
                       {% if request.endpoint.startswith('playlist_manager.') %}
                         border-primary text-primary
                       {% else %}
@@ -37,7 +34,7 @@
             </a>
 
             <a href="{{ url_for('ab_test.dashboard') }}"
-               class="shrink-0 border-b-2 px-1 pb-3 text-sm font-medium whitespace-nowrap
+               class="shrink-0 border-b-2 px-1 pb-2 text-sm font-medium whitespace-nowrap
                       {% if request.endpoint.startswith('ab_test.') %}
                         border-primary text-primary
                       {% else %}
