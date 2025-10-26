@@ -4,60 +4,13 @@
 <div x-data="videoManager()" x-cloak>
     {{ form.hidden_tag() }}
 
-    {/* Compact Top Actions Bar */}
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
-        <div class="flex items-center gap-3 flex-wrap">
-            {/* Bulk Edit Toggle */}
-            <button @click="toggleBulkEditMode()"
-                    class="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
-                    :class="bulkEditMode ? 'bg-red-500/10 text-red-700 hover:bg-red-500/20' : 'bg-primary text-primary-foreground hover:bg-primary/90'">
-                <i class="fa-solid mr-2" :class="bulkEditMode ? 'fa-times' : 'fa-pencil-alt'"></i>
-                <span x-text="bulkEditMode ? 'Cancel Edit' : 'Bulk Edit'"></span>
-            </button>
-
-            {/* Select All Checkbox - Only in Bulk Mode */}
-            <div x-show="bulkEditMode" x-transition class="flex items-center">
-                <input type="checkbox" @change="toggleSelectAll($event)" :checked="isAllSelected" :indeterminate="isIndeterminate" id="select-all-checkbox" class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary">
-                <label for="select-all-checkbox" class="ml-2 text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
-            </div>
-
-            {/* Limit Message */}
-            <div x-show="bulkEditMode && limitMessage" x-transition class="text-xs text-yellow-600 font-medium" x-text="limitMessage"></div>
-        </div>
-
-        {/* Filters & Sort */}
-        <div class="flex items-center gap-3">
-            {/* Filter Pills */}
-            <div class="flex items-center gap-2">
-                <button @click="filter = 'all'" class="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': filter === 'all', 'bg-secondary text-muted-foreground hover:bg-border': filter !== 'all' }">All</button>
-                <button @click="filter = 'videos'" class="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': filter === 'videos', 'bg-secondary text-muted-foreground hover:bg-border': filter !== 'videos' }">Videos</button>
-                <button @click="filter = 'shorts'" class="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors" :class="{ 'bg-primary text-primary-foreground': filter === 'shorts', 'bg-secondary text-muted-foreground hover:bg-border': filter !== 'shorts' }">Shorts</button>
-            </div>
-
-            {/* Sort Dropdown */}
-            <select x-model="sortBy" class="bg-card border border-input rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary">
-                <option value="newest">Newest First</option>
-                <option value="views">Most Viewed</option>
-            </select>
-        </div>
-    </div>
-
-    {/* Selected Videos Action Bar */}
-    <div x-show="selectedVideos.length > 0 && bulkEditMode" x-transition class="sticky top-20 z-30 bg-primary/90 text-primary-foreground backdrop-blur-sm rounded-lg shadow-lg p-3 mb-4 flex justify-between items-center">
-        <span class="font-semibold" x-text="`${selectedVideos.length} video(s) selected`"></span>
-        <span x-show="dailyLimit !== Infinity" class="text-xs opacity-80" x-text="`(${remainingEdits} edits remaining today)`"></span>
-        <button @click="openBulkEditModal()" class="bg-white text-primary font-semibold px-4 py-2 rounded-md hover:bg-gray-200 text-sm">
-            <i class="fa-solid fa-pencil mr-2"></i>Edit Selected
-        </button>
-    </div>
-
-    {/* Main Layout - Sidebar + Video Grid */}
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    {# Main Layout - Sidebar + Video Section #}
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Sidebar - Channel Info (Fixed on Desktop) */}
-        <div class="lg:col-span-1">
+        {# Left Sidebar - Channel Info (Fixed on Desktop) #}
+        <div class="lg:col-span-2">
             <div class="bg-card rounded-xl border shadow-sm p-6 lg:sticky lg:top-24 space-y-4">
-                {/* Channel Avatar */}
+                {# Channel Avatar #}
                 <div class="text-center">
                     <div class="w-20 h-20 mx-auto mb-3 rounded-full overflow-hidden border-4 border-secondary">
                         {% if current_user.channel and current_user.channel.thumbnail_url %}
@@ -68,12 +21,12 @@
                         </div>
                         {% endif %}
                     </div>
-                    <h3 class="font-bold text-lg text-foreground">
+                    <h3 class="font-bold text-base text-foreground">
                         {{ current_user.channel.channel_title if current_user.channel else 'Your Channel' }}
                     </h3>
                 </div>
 
-                {/* Stats Summary */}
+                {# Stats Summary #}
                 <div class="space-y-3 pt-4 border-t">
                     <div class="flex justify-between items-center">
                         <span class="text-sm text-muted-foreground">Total Videos</span>
@@ -89,17 +42,17 @@
                     </div>
                 </div>
 
-                {/* Quick Actions */}
+                {# Quick Actions #}
                 <div class="pt-4 border-t space-y-2">
-                    <a href="{{ url_for('manager.upload') }}" class="block w-full text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg font-semibold hover:bg-primary/90 text-sm">
+                    <a href="{{ url_for('manager.upload') }}" class="block w-full text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg font-semibold hover:bg-primary/90 text-sm transition-colors">
                         <i class="fa-solid fa-upload mr-2"></i>Upload Video
                     </a>
-                    <a href="{{ url_for('playlist_manager.manage_playlists') }}" class="block w-full text-center bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-semibold hover:bg-border text-sm">
+                    <a href="{{ url_for('playlist_manager.manage_playlists') }}" class="block w-full text-center bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-semibold hover:bg-border text-sm transition-colors">
                         <i class="fa-solid fa-list mr-2"></i>Manage Playlists
                     </a>
                 </div>
 
-                {/* Plan Info */}
+                {# Plan Info #}
                 <div class="pt-4 border-t">
                     <div class="bg-secondary/50 rounded-lg p-3">
                         <div class="flex items-center justify-between mb-2">
@@ -117,94 +70,163 @@
             </div>
         </div>
 
-        {/* Right Side - Video Grid (Scrollable) */}
-        <div class="lg:col-span-3">
-            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                <template x-for="video in filteredAndSortedVideos.slice(0, 50)" :key="video.id">
-                    <div class="group relative bg-card rounded-xl border shadow-sm hover:shadow-md hover:border-primary transition-all duration-200 flex flex-col overflow-hidden"
-                         :class="{ 'ring-2 ring-primary border-primary': selectedVideos.includes(video.id) }"
-                         @click="handleCardClick(video.id)">
+        {# Right Side - Video Management Section #}
+        <div class="lg:col-span-10 lg:border-l lg:border-border lg:pl-6 flex flex-col">
+            
+            {# Top Action Bar #}
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                <div class="flex items-center gap-3 flex-wrap">
+                    {# Bulk Edit Toggle #}
+                    <button @click="toggleBulkEditMode()"
+                            class="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+                            :class="bulkEditMode ? 'bg-red-500/10 text-red-700 hover:bg-red-500/20' : 'bg-primary text-primary-foreground hover:bg-primary/90'">
+                        <i class="fa-solid mr-2" :class="bulkEditMode ? 'fa-times' : 'fa-pencil-alt'"></i>
+                        <span x-text="bulkEditMode ? 'Cancel' : 'Bulk Edit'"></span>
+                    </button>
 
-                        {/* Selection Checkbox */}
-                        <div x-show="bulkEditMode" x-transition class="absolute top-2 left-2 z-10" @click.stop>
-                            <input type="checkbox" :value="video.id" x-model="selectedVideos" :id="'video-checkbox-' + video.id"
-                                   class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary shadow cursor-pointer"
-                                   :disabled="!selectedVideos.includes(video.id) && dailyLimit !== Infinity && selectedVideos.length >= remainingEdits">
+                    {# Select All Checkbox #}
+                    <div x-show="bulkEditMode" x-transition class="flex items-center">
+                        <input type="checkbox" @change="toggleSelectAll($event)" :checked="isAllSelected" :indeterminate="isIndeterminate" id="select-all-checkbox" class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary">
+                        <label for="select-all-checkbox" class="ml-2 text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
+                    </div>
+
+                    {# Limit Message #}
+                    <div x-show="bulkEditMode && limitMessage" x-transition class="text-xs text-yellow-600 font-medium" x-text="limitMessage"></div>
+                </div>
+            </div>
+
+            {# Selected Videos Action Bar #}
+            <div x-show="selectedVideos.length > 0 && bulkEditMode" x-transition class="sticky top-20 z-30 bg-primary/90 text-primary-foreground backdrop-blur-sm rounded-lg shadow-lg p-3 mb-4 flex justify-between items-center">
+                <span class="font-semibold" x-text="`${selectedVideos.length} video(s) selected`"></span>
+                <span x-show="dailyLimit !== Infinity" class="text-xs opacity-80" x-text="`(${remainingEdits} edits remaining today)`"></span>
+                <button @click="openBulkEditModal()" class="bg-white text-primary font-semibold px-4 py-2 rounded-md hover:bg-gray-200 text-sm">
+                    <i class="fa-solid fa-pencil mr-2"></i>Edit Selected
+                </button>
+            </div>
+
+            {# Filter & Sort Controls #}
+            <div class="space-y-3 mb-4">
+                {# Filter Pills #}
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-muted-foreground w-20">Filter by:</span>
+                    <div class="flex items-center gap-1 bg-secondary p-1 rounded-lg border flex-1">
+                        <button @click="filter = 'all'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': filter === 'all', 'text-muted-foreground hover:bg-border': filter !== 'all' }">All</button>
+                        <button @click="filter = 'videos'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': filter === 'videos', 'text-muted-foreground hover:bg-border': filter !== 'videos' }">Videos</button>
+                        <button @click="filter = 'shorts'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': filter === 'shorts', 'text-muted-foreground hover:bg-border': filter !== 'shorts' }">Shorts</button>
+                    </div>
+                </div>
+
+                {# Sort Dropdown #}
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-muted-foreground w-20">Sort by:</span>
+                    <div class="flex items-center gap-1 bg-secondary p-1 rounded-lg border flex-1">
+                        <button @click="sortBy = 'newest'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': sortBy === 'newest', 'text-muted-foreground hover:bg-border': sortBy !== 'newest' }">Newest</button>
+                        <button @click="sortBy = 'views'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': sortBy === 'views', 'text-muted-foreground hover:bg-border': sortBy !== 'views' }">Most Viewed</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Video Grid #}
+            <div class="mt-4 flex-grow">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    <template x-for="video in filteredAndSortedVideos.slice(0, 50)" :key="video.id">
+                        <div class="group relative bg-card rounded-xl border shadow-sm hover:shadow-md hover:border-primary transition-all duration-200 flex flex-col overflow-hidden"
+                             :class="{ 'ring-2 ring-primary border-primary': selectedVideos.includes(video.id) }"
+                             @click="handleCardClick(video.id)">
+
+                            {# Selection Checkbox #}
+                            <div x-show="bulkEditMode" x-transition class="absolute top-2 left-2 z-10" @click.stop>
+                                <input type="checkbox" :value="video.id" x-model="selectedVideos" :id="'video-checkbox-' + video.id"
+                                       class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary shadow cursor-pointer"
+                                       :disabled="!selectedVideos.includes(video.id) && dailyLimit !== Infinity && selectedVideos.length >= remainingEdits">
+                            </div>
+
+                            {# Thumbnail #}
+                            <a :href="'/manage/edit/' + video.id" class="block" @click="if(bulkEditMode) $event.preventDefault()">
+                                <div class="relative">
+                                    <img :src="video.thumbnail" :alt="video.title" class="w-full aspect-video object-cover">
+                                    {# Badges #}
+                                    <div class="absolute top-2 right-2 flex items-center gap-1">
+                                        <span x-show="video.is_short" class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm">
+                                            <i class="fa-solid fa-bolt"></i> Short
+                                        </span>
+                                        <span x-show="video.privacy_status === 'private'" class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm">
+                                            <i class="fa-solid fa-lock"></i>
+                                        </span>
+                                        <span x-show="video.privacy_status === 'unlisted'" class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm">
+                                            <i class="fa-solid fa-link"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                            </a>
+
+                            {# Content #}
+                            <div class="p-3 flex flex-col flex-grow">
+                                <h4 class="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary flex-grow mb-2" x-text="video.title"></h4>
+
+                                {# Stats #}
+                                <div class="text-xs text-muted-foreground mt-2 pt-2 border-t border-dashed space-y-1.5">
+                                    <div class="flex justify-between items-center">
+                                        <span class="flex items-center gap-2">
+                                            <i class="fa-solid fa-eye fa-fw w-4 text-center"></i>
+                                            <span>Views:</span>
+                                        </span>
+                                        <span class="font-semibold text-foreground" x-text="Number(video.view_count).toLocaleString()"></span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="flex items-center gap-2">
+                                            <i class="fa-solid fa-thumbs-up fa-fw w-4 text-center"></i>
+                                            <span>Likes:</span>
+                                        </span>
+                                        <span class="font-semibold text-foreground" x-text="Number(video.like_count).toLocaleString()"></span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="flex items-center gap-2">
+                                            <i class="fa-solid fa-comments fa-fw w-4 text-center"></i>
+                                            <span>Comments:</span>
+                                        </span>
+                                        <span class="font-semibold text-foreground" x-text="Number(video.comment_count).toLocaleString()"></span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="flex items-center gap-2">
+                                            <i class="fa-solid fa-calendar fa-fw w-4 text-center"></i>
+                                            <span>Time:</span>
+                                        </span>
+                                        <span class="font-semibold text-foreground" x-text="formatRelativeTime(video.published_at)"></span>
+                                    </div>
+                                </div>
+
+                                {# Action Buttons #}
+                                <div class="grid grid-cols-2 gap-2 pt-2 mt-2 border-t">
+                                    <a :href="'/manage/analytics/' + video.id" @click.stop
+                                       class="text-xs font-semibold py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 bg-primary/10 text-primary hover:bg-primary/20">
+                                        <i class="fa-solid fa-chart-line"></i>
+                                        <span>Analytics</span>
+                                    </a>
+                                    <a :href="'/manage/edit/' + video.id" @click.stop
+                                       class="text-xs font-semibold py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90">
+                                        <i class="fa-solid fa-pencil"></i>
+                                        <span>Edit</span>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
+                    </template>
+                </div>
 
-                        {/* Thumbnail */}
-                        <a :href="'/manage/edit/' + video.id" class="block" @click="if(bulkEditMode) $event.preventDefault()">
-                            <div class="relative">
-                                <img :src="video.thumbnail" :alt="video.title" class="w-full aspect-video object-cover">
-                                {/* Badges */}
-                                <div class="absolute top-2 right-2 flex items-center gap-1">
-                                    <span x-show="video.is_short" class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm">
-                                        <i class="fa-solid fa-bolt"></i> Short
-                                    </span>
-                                    <span x-show="video.privacy_status === 'private'" class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm">
-                                        <i class="fa-solid fa-lock"></i>
-                                    </span>
-                                    <span x-show="video.privacy_status === 'unlisted'" class="bg-black/60 text-white text-xs font-bold px-2 py-1 rounded-full backdrop-blur-sm">
-                                        <i class="fa-solid fa-link"></i>
-                                    </span>
-                                </div>
-                            </div>
-                        </a>
-
-                        {/* Content */}
-                        <div class="p-4 flex flex-col flex-grow">
-                            <h4 class="font-semibold text-sm text-foreground line-clamp-2 group-hover:text-primary flex-grow mb-3" x-text="video.title"></h4>
-
-                            {/* Stats Grid */}
-                            <div class="grid grid-cols-2 gap-2 text-xs mb-3">
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-eye text-muted-foreground"></i>
-                                    <span class="font-semibold" x-text="Number(video.view_count).toLocaleString()"></span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-thumbs-up text-muted-foreground"></i>
-                                    <span class="font-semibold" x-text="Number(video.like_count).toLocaleString()"></span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-comments text-muted-foreground"></i>
-                                    <span class="font-semibold" x-text="Number(video.comment_count).toLocaleString()"></span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-calendar text-muted-foreground"></i>
-                                    <span class="font-semibold" x-text="formatRelativeTime(video.published_at)"></span>
-                                </div>
-                            </div>
-
-                            {/* Action Buttons */}
-                            <div class="grid grid-cols-2 gap-2 pt-3 border-t">
-                                <a :href="'/manage/analytics/' + video.id" @click.stop
-                                   class="text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-primary/10 text-primary hover:bg-primary/20">
-                                    <i class="fa-solid fa-chart-line"></i>
-                                    <span>Analytics</span>
-                                </a>
-                                <a :href="'/manage/edit/' + video.id" @click.stop
-                                   class="text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90">
-                                    <i class="fa-solid fa-pencil"></i>
-                                    <span>Edit</span>
-                                </a>
-                            </div>
-                        </div>
+                {# No Videos Message #}
+                <template x-if="filteredAndSortedVideos.length === 0">
+                    <div class="text-center py-12 bg-card rounded-xl border border-dashed">
+                        <i class="fa-solid fa-video-slash text-5xl text-muted-foreground mb-4"></i>
+                        <h3 class="text-xl font-semibold text-foreground">No videos found</h3>
+                        <p class="text-muted-foreground mt-2">No videos match the current filter.</p>
                     </div>
                 </template>
             </div>
-
-            {/* No Videos Message */}
-            <template x-if="filteredAndSortedVideos.length === 0">
-                <div class="text-center py-12 bg-card rounded-xl border border-dashed">
-                    <i class="fa-solid fa-video-slash text-5xl text-muted-foreground mb-4"></i>
-                    <h3 class="text-xl font-semibold text-foreground">No videos found</h3>
-                    <p class="text-muted-foreground mt-2">No videos match the current filter.</p>
-                </div>
-            </template>
         </div>
     </div>
 
-    {/* Bulk Edit Modal */}
+    {# Bulk Edit Modal #}
     <div x-show="showBulkEditModal" x-transition class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @keydown.escape.window="showBulkEditModal = false" x-cloak>
         <div @click.away="showBulkEditModal = false" class="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div class="p-5 border-b flex justify-between items-center">
@@ -212,7 +234,7 @@
                 <button @click="showBulkEditModal = false" class="text-muted-foreground hover:text-foreground text-2xl">&times;</button>
             </div>
             <div class="p-6 space-y-4 overflow-y-auto">
-                {/* Tags Section */}
+                {# Tags Section #}
                 <div class="space-y-4 border border-border p-4 rounded-lg">
                     <h4 class="text-base font-semibold text-foreground mb-3">Modify Tags</h4>
                     <div>
@@ -227,7 +249,7 @@
                     </div>
                 </div>
 
-                {/* Description Section */}
+                {# Description Section #}
                 <div class="space-y-4 border border-border p-4 rounded-lg">
                     <h4 class="text-base font-semibold text-foreground mb-3">Modify Description</h4>
                     <div>
@@ -236,7 +258,7 @@
                     </div>
                 </div>
 
-                {/* Privacy Section */}
+                {# Privacy Section #}
                 <div class="space-y-4 border border-border p-4 rounded-lg">
                     <h4 class="text-base font-semibold text-foreground mb-3">Modify Visibility</h4>
                     <select x-model="bulkEditData.privacy_status" class="w-full bg-background border border-input rounded-lg p-3 text-sm">
@@ -247,7 +269,7 @@
                     </select>
                 </div>
 
-                {/* Disclaimer */}
+                {# Disclaimer #}
                 <div class="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                     <label class="flex items-start space-x-3 cursor-pointer">
                         <input type="checkbox" x-model="disclaimerChecked" class="mt-1 h-4 w-4 rounded border-yellow-400 text-primary focus:ring-primary">
@@ -275,7 +297,7 @@
         </div>
     </div>
 
-    {/* Confirmation Modal */}
+    {# Confirmation Modal #}
     <div x-show="showConfirmModal" x-transition class="fixed inset-0 bg-black/60 z-[1000] flex items-center justify-center p-4" x-cloak>
         <div @click.away="showConfirmModal = false" class="bg-card rounded-xl shadow-xl w-full max-w-sm text-center p-6">
             <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-destructive/10">
@@ -293,7 +315,6 @@
 </div>
 
 <script>
-    // Get data from Python backend
     const PAGE_DATA = typeof pageDataForJS !== 'undefined' ? pageDataForJS : {{ page_data_json|default('{}')|safe }};
     
     function videoManager() {
