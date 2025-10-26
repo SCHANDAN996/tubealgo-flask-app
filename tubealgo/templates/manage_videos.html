@@ -8,7 +8,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {# Left Sidebar - Channel Info (Fixed on Desktop) #}
-        <div class="lg:col-span-3">
+        <div class="lg:col-span-2">
             <div class="bg-card rounded-xl border shadow-sm p-6 lg:sticky lg:top-24 space-y-4">
                 {# Channel Avatar #}
                 <div class="text-center">
@@ -75,7 +75,7 @@
         </div>
 
         {# Right Side - Video Management Section #}
-        <div class="lg:col-span-9 lg:border-l lg:border-border lg:pl-6 flex flex-col">
+        <div class="lg:col-span-10 lg:border-l lg:border-border lg:pl-6 flex flex-col">
             
             {# Top Action Bar #}
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
@@ -90,6 +90,14 @@
                 </div>
 
                 <div class="flex items-center gap-3 flex-wrap">
+                    {# Bulk Edit Toggle #}
+                    <button @click="toggleBulkEditMode()"
+                            class="px-4 py-2 rounded-lg font-semibold text-sm transition-colors"
+                            :class="bulkEditMode ? 'bg-red-500/10 text-red-700 hover:bg-red-500/20' : 'bg-primary text-primary-foreground hover:bg-primary/90'">
+                        <i class="fa-solid mr-2" :class="bulkEditMode ? 'fa-times' : 'fa-pencil-alt'"></i>
+                        <span x-text="bulkEditMode ? 'Cancel' : 'Bulk Edit'"></span>
+                    </button>
+
                     {# Select All Checkbox #}
                     <div x-show="bulkEditMode" x-transition class="flex items-center">
                         <input type="checkbox" @change="toggleSelectAll($event)" :checked="isAllSelected" :indeterminate="isIndeterminate" id="select-all-checkbox" class="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary">
@@ -128,10 +136,6 @@
                     <div class="flex items-center gap-1 bg-secondary p-1 rounded-lg border flex-1">
                         <button @click="sortBy = 'newest'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': sortBy === 'newest', 'text-muted-foreground hover:bg-border': sortBy !== 'newest' }">Newest</button>
                         <button @click="sortBy = 'views'" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="{ 'bg-primary text-primary-foreground shadow': sortBy === 'views', 'text-muted-foreground hover:bg-border': sortBy !== 'views' }">Most Viewed</button>
-                        <button @click="toggleBulkEditMode()" class="flex-1 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors" :class="bulkEditMode ? 'bg-red-500/10 text-red-700 hover:bg-red-500/20' : 'text-muted-foreground hover:bg-border'">
-                            <i class="fa-solid mr-1" :class="bulkEditMode ? 'fa-times' : 'fa-pencil-alt'"></i>
-                            <span x-text="bulkEditMode ? 'Cancel Edit' : 'Bulk Edit'"></span>
-                        </button>
                     </div>
                 </div>
             </div>
