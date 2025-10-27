@@ -11,22 +11,20 @@ from datetime import datetime, timezone, timedelta
 from celery import Celery, Task
 from celery.schedules import crontab
 import config
-from sqlalchemy import text, inspect # <<< inspect जोड़ा गया
+from sqlalchemy import text, inspect # inspect जोड़ा गया
 from sqlalchemy.exc import OperationalError
 import pytz
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_sse import sse
-# Flask-Migrate हटा दिया गया
 
 load_dotenv()
 
 db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
-# Migrate हटा दिया गया
 
 def limiter_key_func():
-    # Return a unique identifier for rate limiting (user ID or IP address)
+    """Return a unique identifier for rate limiting (user ID or IP address)."""
     if current_user and current_user.is_authenticated:
         return str(current_user.id)
     return get_remote_address()
@@ -160,7 +158,6 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'auth_local.login' # Route to redirect unauthenticated users
     login_manager.login_message_category = "error" # Flash message category
-    # migrate.init_app(app, db) # <<< Migrate हटा दिया गया
 
     # Initialize Flask-Limiter
     limiter_storage_uri = app.config.get("REDIS_URL", "memory://") # Use Redis if available
@@ -179,12 +176,13 @@ def create_app():
             if last_seen_time < five_minutes_ago:
                 current_user.last_seen = datetime.utcnow()
                 try:
-                    # Commit the change directly (user object is already in session)
+                    # Attempt to commit without adding, as user object is already managed
                     db.session.commit()
                 except Exception as e:
                     db.session.rollback()
-                    # Log the error but don't crash the request
+                    # Log error more quietly in production
                     app.logger.error(f"Error updating last_seen for user {current_user.id}: {e}")
+                    # print(f"Error updating last_seen for user {current_user.id}: {e}") # Keep for local debug
 
     @app.after_request
     def add_security_headers(response):
@@ -235,47 +233,27 @@ def create_app():
         """Handle page not found errors (404)."""
         return render_template('errors/404.html'), 404
 
-    # --- Application context block for initial setup ---
+    # --- Simplified Application context block for startup checks ---
     with app.app_context():
         try:
             print("Checking database connection...")
-            # Use inspect to check for a common table like 'user'
-            inspector = inspect(db.engine)
-            table_exists = inspector.has_table("user") # Check specifically for the 'user' table
-            print(f"Database connection successful. 'user' table exists: {table_exists}")
+            db.session.execute(text('SELECT 1')) # Simple check
+            print("Database connection seems OK.")
 
-            # <<< Create tables ONLY if 'user' table does NOT exist >>>
-            # This prevents errors if tables already exist and avoids needing migrations for simple setups
-            if not table_exists:
-                print("Tables not found, creating all tables...")
-                db.create_all() # Create tables based on all defined models
-                print("Database tables created.")
-                # Seed plans only immediately after creating tables for the first time
-                seed_plans()
-            else:
-                # If tables exist, check if plans need seeding (e.g., if plan table is empty)
-                seed_plans() # The function itself checks if seeding is needed
-
+            # Initialize AI clients here as it relies on config loaded into app
             print("Initializing AI clients within app context...")
-            # Import and initialize AI clients (e.g., Gemini)
             from .services.ai_service import initialize_ai_clients
             initialize_ai_clients()
 
-        except OperationalError as e:
-            # Handle potential database connection errors gracefully during startup
-            print(f"ERROR: Database connection/operation failed during init (OperationalError): {e}. App might not function correctly.")
-            db.session.rollback() # Rollback the session
-            # Log this as a critical error for monitoring
-            from .models import log_system_event # Local import
-            log_system_event("DB Connection/Operation Error on Startup", "ERROR", details=str(e))
+            # Seed plans only if the table exists (created by create_tables.py)
+            # This is less critical now but keeps the logic if needed
+            seed_plans()
+
         except Exception as e:
-            # Handle any other unexpected errors during initialization
-            print(f"Error during app context initialization: {e}")
-            import traceback
-            traceback.print_exc()
-            db.session.rollback() # Rollback on other errors too
-            from .models import log_system_event # Local import
-            log_system_event("App Init Error", "ERROR", details=str(e), traceback_info=traceback.format_exc())
+            # Log a warning, but allow the app to continue starting
+            # Errors during requests will be caught by error handlers or specific try/excepts
+            print(f"WARNING: Could not verify DB connection or initialize services on startup: {e}")
+            db.session.rollback() # Ensure session is clean if DB check failed mid-transaction
 
 
     # --- Import and register Blueprints ---
@@ -350,7 +328,7 @@ def create_app():
     csrf.exempt(payment_bp)
 
     # Import models at the end to ensure db is initialized and blueprints are registered
-    # This also makes models available if db.create_all() is called elsewhere
+    # This also makes models available if db.create_all() is called elsewhere implicitly by extensions
     from . import models
 
     # Return the configured app instance
@@ -397,6 +375,7 @@ def format_relative_time(dt_input):
 
 def seed_plans():
     """Seeds the database with default subscription plans if table exists and is empty."""
+    # This function is now primarily called from create_tables.py after tables are created
     from .models import SubscriptionPlan # Local import for models
     from sqlalchemy import inspect # Local import for inspect
     try:
