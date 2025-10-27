@@ -58,11 +58,10 @@
         window.USER_DATA = null;
         {% endif %}
         
-        // App config
+        // App config (without API URL - not needed in frontend)
         window.APP_CONFIG = {
             name: "{{ app_name }}",
-            version: "{{ app_version }}",
-            apiUrl: "{{ url_for('api.get_user_stats', _external=True).rsplit('/', 1)[0] }}"
+            version: "{{ app_version }}"
         };
     </script>
     
@@ -159,9 +158,8 @@
                 <div>
                     <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Product</h3>
                     <ul class="space-y-2">
-                        <li><a href="{{ url_for('core.features') }}" class="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600">Features</a></li>
-                        <li><a href="{{ url_for('core.pricing') }}" class="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600">Pricing</a></li>
                         <li><a href="{{ url_for('core.about') }}" class="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600">About</a></li>
+                        <li><a href="{{ url_for('core.pricing') }}" class="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600">Pricing</a></li>
                     </ul>
                 </div>
                 <div>
@@ -176,7 +174,6 @@
                     <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Support</h3>
                     <ul class="space-y-2">
                         <li><a href="{{ url_for('core.contact') }}" class="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600">Contact</a></li>
-                        <li><a href="#" class="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600">Help Center</a></li>
                     </ul>
                 </div>
             </div>
