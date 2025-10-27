@@ -1,6 +1,6 @@
 # create_tables.py
 
-from tubealgo import create_app, db
+from tubealgo import create_app, db, seed_plans # <<< seed_plans को इम्पोर्ट करें
 
 print("Starting table creation process...")
 
@@ -13,5 +13,9 @@ with app.app_context():
     # यह आपके सभी मॉडल्स के आधार पर टेबल बनाएगा
     db.create_all()
     print("Database tables created successfully! ✨")
+
+    # टेबल बनने के बाद प्लान सीड करें
+    print("Attempting to seed plans...")
+    seed_plans() # <<< seed_plans() को यहाँ कॉल करें
 
 print("Table creation script finished.")
