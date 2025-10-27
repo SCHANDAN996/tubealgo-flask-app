@@ -1,11 +1,13 @@
 # render.yaml
+# Configuration for deploying the TubeAlgo application on Render.com
 
 services:
   # 1. Redis Service
   - name: redis
     type: pserv
     env: docker
-    image: url: redis:7
+    image:
+      url: redis:7
     plan: free
     disk:
       name: redis-data
@@ -17,17 +19,15 @@ services:
     name: tubealgo
     env: python
     plan: free
-    # Build command installs dependencies and creates DB tables
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-      python create_tables.py # Creates tables if they don't exist
-    startCommand: "gunicorn -c gunicorn.conf.py run:app"
+    buildCommand: "./build.sh"
+    # --- Gunicorn को कॉन्फ़िग फ़ाइल का उपयोग करने के लिए कहें --- #
+    startCommand: "gunicorn -c gunicorn.conf.py run:app" # <<<--- बदलाव यहाँ है
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: NODE_VERSION
         value: 20.10.0
+      # --- GUNICORN_CMD_ARGS हटा दिया गया है --- #
       - key: SECRET_KEY
         generateValue: true
       - key: REDIS_URL
@@ -36,9 +36,9 @@ services:
         value: "run.py"
       - key: FLASK_ENV
         value: "production"
+      # --- बाकी secrets (sync: false) ---
       - key: DATABASE_URL
         fromDatabase: { name: tubealgo-database, property: connectionString }
-      # --- Other secrets ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -68,14 +68,10 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A run:celery worker --loglevel=info"
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: REDIS_URL
         fromService: { type: pserv, name: redis, property: url }
       - key: DATABASE_URL
         fromDatabase: { name: tubealgo-database, property: connectionString }
-      - key: FLASK_ENV
-        value: "production"
       # --- secrets ---
       - key: YOUTUBE_API_KEYS
         sync: false
@@ -85,6 +81,8 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_CHAT_ID
         sync: false
+      - key: FLASK_ENV
+        value: "production"
 
   # 4. Celery Beat Service
   - type: worker
@@ -94,14 +92,10 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A run:celery beat --loglevel=info"
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: REDIS_URL
         fromService: { type: pserv, name: redis, property: url }
       - key: DATABASE_URL
         fromDatabase: { name: tubealgo-database, property: connectionString }
-      - key: FLASK_ENV
-        value: "production"
       # --- secrets ---
       - key: YOUTUBE_API_KEYS
         sync: false
@@ -111,7 +105,10 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_CHAT_ID
         sync: false
+      - key: FLASK_ENV
+        value: "production"
 
+# --- Database Configuration ---
 databases:
   - name: tubealgo-database
     databaseName: tubealgodb
