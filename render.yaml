@@ -8,7 +8,7 @@ services:
     env: docker
     image:
       url: redis:7
-    plan: free
+    plan: free # Consider upgrading for production
     disk:
       name: redis-data
       mountPath: /data
@@ -18,27 +18,32 @@ services:
   - type: web
     name: tubealgo
     env: python
-    plan: free
-    buildCommand: "./build.sh"
-    # --- Gunicorn को कॉन्फ़िग फ़ाइल का उपयोग करने के लिए कहें --- #
-    startCommand: "gunicorn -c gunicorn.conf.py run:app" # <<<--- बदलाव यहाँ है
+    plan: free # Consider upgrading for production (e.g., 'starter')
+    # === REMOVED flask db upgrade from buildCommand ===
+    buildCommand: |
+      pip install --upgrade pip
+      npm install
+      npm run build
+      pip install -r requirements.txt
+    # === End of change ===
+    startCommand: "gunicorn -c gunicorn.conf.py run:app"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.0 # Or your desired Python version
       - key: NODE_VERSION
-        value: 20.10.0
-      # --- GUNICORN_CMD_ARGS हटा दिया गया है --- #
+        value: 20.10.0 # Or your desired Node version
       - key: SECRET_KEY
         generateValue: true
       - key: REDIS_URL
         fromService: { type: pserv, name: redis, property: url }
-      - key: FLASK_APP
+      - key: FLASK_APP # Keep FLASK_APP if needed for other flask commands (though not db anymore)
         value: "run.py"
       - key: FLASK_ENV
         value: "production"
-      # --- बाकी secrets (sync: false) ---
+      # --- Database Connection (Render provides this) ---
       - key: DATABASE_URL
         fromDatabase: { name: tubealgo-database, property: connectionString }
+      # --- Other secrets (Set these in Render Environment Variables UI) ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GOOGLE_CLIENT_ID
@@ -58,21 +63,26 @@ services:
       - key: CASHFREE_SECRET_KEY
         sync: false
       - key: CASHFREE_ENV
-        value: "PROD"
+        value: "PROD" # Or "SANDBOX" for testing
+      # Add any other required environment variables here with sync: false
 
   # 3. Celery Worker Service
   - type: worker
     name: celery-worker
     env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
+    plan: free # Consider upgrading if tasks are heavy or numerous
+    buildCommand: "pip install -r requirements.txt" # Installs dependencies
     startCommand: "celery -A run:celery worker --loglevel=info"
     envVars:
+      - key: PYTHON_VERSION # Match web service
+        value: 3.11.0
       - key: REDIS_URL
         fromService: { type: pserv, name: redis, property: url }
       - key: DATABASE_URL
         fromDatabase: { name: tubealgo-database, property: connectionString }
-      # --- secrets ---
+      - key: FLASK_ENV # Important for Celery context
+        value: "production"
+      # --- secrets (must match web service) ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GEMINI_API_KEY
@@ -81,8 +91,7 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_CHAT_ID
         sync: false
-      - key: FLASK_ENV
-        value: "production"
+      # Add other necessary secrets
 
   # 4. Celery Beat Service
   - type: worker
@@ -92,11 +101,15 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A run:celery beat --loglevel=info"
     envVars:
+      - key: PYTHON_VERSION # Match web service
+        value: 3.11.0
       - key: REDIS_URL
         fromService: { type: pserv, name: redis, property: url }
       - key: DATABASE_URL
         fromDatabase: { name: tubealgo-database, property: connectionString }
-      # --- secrets ---
+      - key: FLASK_ENV # Important for Celery context
+        value: "production"
+      # --- secrets (must match web service) ---
       - key: YOUTUBE_API_KEYS
         sync: false
       - key: GEMINI_API_KEY
@@ -105,12 +118,11 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_CHAT_ID
         sync: false
-      - key: FLASK_ENV
-        value: "production"
+      # Add other necessary secrets
 
 # --- Database Configuration ---
 databases:
   - name: tubealgo-database
-    databaseName: tubealgodb
-    user: tubealgouser
-    plan: free
+    databaseName: tubealgodb # Choose a name
+    user: tubealgouser # Choose a username
+    plan: free # Consider upgrading for production
