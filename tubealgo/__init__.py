@@ -1,406 +1,326 @@
 # tubealgo/__init__.py
-"""
-TubeAlgo Application Factory
-Complete rewrite with Redis/Celery disabled for free tier
-"""
 
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
-from flask_wtf.csrf import CSRFProtect
-from flask_migrate import Migrate
 import os
-import logging
-from logging.handlers import RotatingFileHandler
+from flask import Flask, url_for, session, g, render_template
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, current_user
+from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from datetime import datetime, timezone, timedelta
+from celery import Celery, Task
+from celery.schedules import crontab
+import config
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+import pytz
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_sse import sse
 
-# Initialize extensions
+load_dotenv()
+
 db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
-migrate = Migrate()
 
-# Simple in-memory cache (Redis replacement)
-from tubealgo.services.simple_cache import cache
+def limiter_key_func():
+    if current_user and current_user.is_authenticated:
+        return str(current_user.id)
+    return get_remote_address()
+
+limiter = Limiter(key_func=limiter_key_func, default_limits=["200 per day", "50 per hour"])
+
+celery = Celery(__name__)
 
 
-def create_app(config_name=None):
-    """
-    Application factory pattern
-    """
-    app = Flask(__name__)
-    
-    # ============================================
-    # Configuration
-    # ============================================
-    
-    # Basic config
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-    
-    # Database
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url and database_url.startswith('postgres://'):
-        # Fix for Render.com - postgres:// -> postgresql://
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///tubealgo.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
+def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
+    """Jinja filter to convert a UTC datetime object to a user's preferred timezone."""
+    if not utc_dt:
+        return ""
+
+    user_tz_str = 'Asia/Kolkata'
+    try:
+        if current_user and current_user.is_authenticated and hasattr(current_user, 'timezone') and current_user.timezone:
+            user_tz_str = current_user.timezone
+        user_tz = pytz.timezone(user_tz_str)
+    except pytz.UnknownTimeZoneError:
+        user_tz = pytz.timezone('Asia/Kolkata')
+
+    if not isinstance(utc_dt, datetime):
+        try:
+            utc_dt = datetime.fromisoformat(str(utc_dt).replace('Z', '+00:00'))
+        except (ValueError, TypeError):
+             return str(utc_dt)
+
+    if utc_dt.tzinfo is None:
+        utc_dt = utc_dt.replace(tzinfo=pytz.utc)
+
+    try:
+        local_dt = utc_dt.astimezone(user_tz)
+        return local_dt.strftime(fmt)
+    except Exception as e:
+         print(f"Error localizing datetime ({utc_dt}): {e}")
+         return utc_dt.strftime(fmt) + " UTC"
+
+
+def create_app():
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    static_folder_path = os.path.join(project_root, 'static')
+    template_folder_path = os.path.join(project_root, 'tubealgo', 'templates')
+    instance_folder_path = os.path.join(project_root, 'instance')
+
+    app = Flask(
+        __name__.split('.')[0],
+        instance_path=instance_folder_path,
+        instance_relative_config=True,
+        static_folder=static_folder_path,
+        template_folder=template_folder_path
+    )
+
+    app.config.from_object(config.Config)
+
+    try:
+        os.makedirs(app.instance_path, exist_ok=True)
+    except OSError:
+        pass
+
+    app.config["REDIS_URL"] = app.config.get("REDIS_URL", "redis://127.0.0.1:6379/0")
+    app.register_blueprint(sse, url_prefix='/stream')
+
+    celery.conf.update(
+        broker_url=app.config["CELERY_BROKER_URL"],
+        result_backend=app.config["CELERY_RESULT_BACKEND"],
+    )
+    celery.conf.beat_schedule = {
+        'take-daily-snapshots-every-day': {
+            'task': 'tubealgo.jobs.take_daily_snapshots',
+            'schedule': crontab(hour=0, minute=5, day_of_week='*'),
+        },
+        'check-for-new-videos-every-hour': {
+            'task': 'tubealgo.jobs.check_for_new_videos',
+            'schedule': crontab(minute=0, hour='*'),
+        },
+        'update-all-dashboards-every-4-hours': {
+            'task': 'tubealgo.jobs.update_all_dashboards',
+            'schedule': crontab(minute=15, hour='*/4'),
+        },
+         'take-video-snapshots-every-3-hours': {
+            'task': 'tubealgo.jobs.take_video_snapshots',
+            'schedule': crontab(minute=30, hour='*/3'),
+        },
+        'cleanup-old-snapshots-daily': {
+            'task': 'tubealgo.jobs.cleanup_old_snapshots',
+            'schedule': crontab(hour=1, minute=0, day_of_week='*'),
+        },
     }
-    
-    # Security
-    app.config['WTF_CSRF_ENABLED'] = True
-    app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit
-    app.config['SESSION_COOKIE_SECURE'] = False  # Set True in production with HTTPS
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.config['PERMANENT_SESSION_LIFETIME'] = 2592000  # 30 days
-    
-    # File upload
-    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
-    app.config['UPLOAD_FOLDER'] = os.path.join(app.instance_path, 'uploads')
-    
-    # API Keys
-    app.config['YOUTUBE_API_KEYS'] = os.environ.get('YOUTUBE_API_KEYS', '').split(',')
-    app.config['GEMINI_API_KEY'] = os.environ.get('GEMINI_API_KEY', '')
-    app.config['TELEGRAM_BOT_TOKEN'] = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-    
-    # Payment gateways
-    app.config['CASHFREE_APP_ID'] = os.environ.get('CASHFREE_APP_ID', '')
-    app.config['CASHFREE_SECRET_KEY'] = os.environ.get('CASHFREE_SECRET_KEY', '')
-    app.config['CASHFREE_ENV'] = os.environ.get('CASHFREE_ENV', 'TEST')
-    
-    # ============================================
-    # REDIS/CELERY - DISABLED FOR FREE TIER
-    # ============================================
-    # Uncomment these when you upgrade to paid tier with Redis
-    
-    # redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    # app.config['CELERY_BROKER_URL'] = redis_url
-    # app.config['CELERY_RESULT_BACKEND'] = redis_url
-    # app.config['CACHE_TYPE'] = 'redis'
-    # app.config['CACHE_REDIS_URL'] = redis_url
-    
-    # Temporary: Use simple in-memory cache
-    app.config['CACHE_TYPE'] = 'simple'
-    
-    # ============================================
-    # Initialize Extensions
-    # ============================================
-    
+
+    class ContextTask(Task):
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                return self.run(*args, **kwargs)
+    celery.Task = ContextTask
+    app.celery = celery
+
     db.init_app(app)
-    migrate.init_app(app, db)
-    login_manager.init_app(app)
     csrf.init_app(app)
+    login_manager.init_app(app)
+    login_manager.login_view = 'auth_local.login'
+    login_manager.login_message_category = "error"
+
+    limiter_storage_uri = app.config.get("REDIS_URL", "memory://")
+    limiter.init_app(app)
+
+    # --- Import and register Blueprints ---
+    from .auth_local import auth_local_bp
+    app.register_blueprint(auth_local_bp, url_prefix='/')
     
-    # Login manager settings
-    login_manager.login_view = 'auth.login'
-    login_manager.login_message = 'Please log in to access this page.'
-    login_manager.login_message_category = 'info'
+    from .auth_google import auth_google_bp
+    app.register_blueprint(auth_google_bp, url_prefix='/')
     
-    @login_manager.user_loader
-    def load_user(user_id):
-        from tubealgo.models.user_models import User
-        return User.query.get(int(user_id))
+    from .routes.core_routes import core_bp
+    app.register_blueprint(core_bp, url_prefix='/')
     
-    # ============================================
-    # Logging Setup
-    # ============================================
+    from .routes.dashboard_routes import dashboard_bp
+    app.register_blueprint(dashboard_bp, url_prefix='/')
     
-    if not app.debug and not app.testing:
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
-        
-        file_handler = RotatingFileHandler(
-            'logs/tubealgo.log',
-            maxBytes=10240000,  # 10MB
-            backupCount=10
-        )
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-        ))
-        file_handler.setLevel(logging.INFO)
-        app.logger.addHandler(file_handler)
-        
-        app.logger.setLevel(logging.INFO)
-        app.logger.info('TubeAlgo startup')
+    from .routes.competitor_routes import competitor_bp
+    app.register_blueprint(competitor_bp, url_prefix='/')
     
-    # ============================================
-    # Register Blueprints
-    # ============================================
+    from .routes.analysis_routes import analysis_bp
+    app.register_blueprint(analysis_bp, url_prefix='/')
     
-    # Core routes
-    from tubealgo.routes.core_routes import core_bp
-    app.register_blueprint(core_bp)
-    
-    # Authentication
-    from tubealgo.routes.auth import auth_bp
-    app.register_blueprint(auth_bp)
-    
-    # Dashboard
-    from tubealgo.routes.dashboard_routes import dashboard_bp
-    app.register_blueprint(dashboard_bp)
-    
-    # Analysis
-    from tubealgo.routes.analysis_routes import analysis_bp
-    app.register_blueprint(analysis_bp)
-    
-    # Tools
-    from tubealgo.routes.tool_routes import tool_bp
-    app.register_blueprint(tool_bp)
-    
-    # Competitors
-    from tubealgo.routes.competitor_routes import competitor_bp
-    app.register_blueprint(competitor_bp)
-    
-    # Video Analytics
-    from tubealgo.routes.video_analytics_routes import video_analytics_bp
-    app.register_blueprint(video_analytics_bp)
-    
-    # YouTube Manager
-    from tubealgo.routes.manager_routes import manager_bp
-    app.register_blueprint(manager_bp)
-    
-    from tubealgo.routes.video_manager_routes import video_manager_bp
-    app.register_blueprint(video_manager_bp)
-    
-    from tubealgo.routes.playlist_manager_routes import playlist_manager_bp
-    app.register_blueprint(playlist_manager_bp)
-    
-    # Content Planner
-    from tubealgo.routes.planner_routes import planner_bp
-    app.register_blueprint(planner_bp)
-    
-    # AI Routes
-    from tubealgo.routes.ai_api_routes import ai_api_bp
-    app.register_blueprint(ai_api_bp)
-    
-    # API Routes
-    from tubealgo.routes.api_routes import api_bp
+    from .routes.api_routes import api_bp
     app.register_blueprint(api_bp)
     
-    # User Routes
-    from tubealgo.routes.user_routes import user_bp
-    app.register_blueprint(user_bp)
+    from .routes.ai_api_routes import ai_api_bp
+    app.register_blueprint(ai_api_bp)
     
-    # Settings
-    from tubealgo.routes.settings_routes import settings_bp
-    app.register_blueprint(settings_bp)
+    from .routes.tool_routes import tool_bp
+    app.register_blueprint(tool_bp, url_prefix='/')
     
-    # Payment Routes
-    from tubealgo.routes.payment_routes import payment_bp
-    app.register_blueprint(payment_bp)
+    from .routes.settings_routes import settings_bp
+    app.register_blueprint(settings_bp, url_prefix='/')
     
-    # Report Routes
-    from tubealgo.routes.report_routes import report_bp
-    app.register_blueprint(report_bp)
+    from .routes.payment_routes import payment_bp
+    app.register_blueprint(payment_bp, url_prefix='/payment')
     
-    # Goal Routes
-    from tubealgo.routes.goal_routes import goal_bp
-    app.register_blueprint(goal_bp)
-    
-    # A/B Test Routes
-    from tubealgo.routes.ab_test_routes import ab_test_bp
-    app.register_blueprint(ab_test_bp)
-    
-    # Admin Routes
-    from tubealgo.routes.admin import admin_bp
+    # ✅ CORRECT ADMIN IMPORT - Using folder structure
+    from .routes.admin import admin_bp
     app.register_blueprint(admin_bp, url_prefix='/admin')
     
-    # ============================================
-    # Error Handlers
-    # ============================================
+    from .routes.video_manager_routes import video_manager_bp
+    app.register_blueprint(video_manager_bp, url_prefix='/manage')
     
-    @app.errorhandler(404)
-    def not_found_error(error):
-        from flask import render_template
-        return render_template('errors/404.html'), 404
+    from .routes.playlist_manager_routes import playlist_manager_bp
+    app.register_blueprint(playlist_manager_bp, url_prefix='/manage')
     
+    from .routes.ab_test_routes import ab_test_bp
+    app.register_blueprint(ab_test_bp, url_prefix='/manage')
+    
+    from .routes.report_routes import report_bp
+    app.register_blueprint(report_bp)
+    
+    from .routes.video_analytics_routes import video_analytics_bp
+    app.register_blueprint(video_analytics_bp)
+    
+    from .routes.planner_routes import planner_bp
+    app.register_blueprint(planner_bp)
+    
+    from .routes.goal_routes import goal_bp
+    app.register_blueprint(goal_bp)
+    
+    from .routes.user_routes import user_bp
+    app.register_blueprint(user_bp)
+
+    csrf.exempt(api_bp)
+    csrf.exempt(ai_api_bp)
+    csrf.exempt(payment_bp)
+
+    from . import models
+    from .services.ai_service import initialize_ai_clients
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
+        response.headers.pop('X-Frame-Options', None)
+        response.headers.pop('X-XSS-Protection', None)
+        if response.mimetype == 'text/html':
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
+
+    @app.context_processor
+    def override_url_for():
+        return dict(url_for=url_for)
+
+    @app.context_processor
+    def inject_now_and_settings():
+        from .models import get_setting
+        return {'now': datetime.utcnow, 'get_setting': get_setting}
+
+    @app.context_processor
+    def inject_csrf_token():
+        return dict(csrf_token=generate_csrf)
+
+    app.jinja_env.filters['relative_time'] = format_relative_time
+    app.jinja_env.filters['localize'] = localize_datetime
+
     @app.errorhandler(500)
     def internal_error(error):
-        from flask import render_template
-        db.session.rollback()
         return render_template('errors/500.html'), 500
-    
-    @app.errorhandler(403)
-    def forbidden_error(error):
-        from flask import render_template, jsonify, request
-        if request.is_json:
-            return jsonify({'error': 'Forbidden'}), 403
-        return render_template('errors/403.html'), 403
-    
-    # ============================================
-    # Template Filters
-    # ============================================
-    
-    @app.template_filter('format_number')
-    def format_number(value):
-        """Format number with commas"""
-        try:
-            return "{:,}".format(int(value))
-        except (ValueError, TypeError):
-            return value
-    
-    @app.template_filter('format_duration')
-    def format_duration(seconds):
-        """Format duration from seconds to HH:MM:SS"""
-        try:
-            seconds = int(seconds)
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            secs = seconds % 60
-            
-            if hours > 0:
-                return f"{hours}:{minutes:02d}:{secs:02d}"
-            else:
-                return f"{minutes}:{secs:02d}"
-        except (ValueError, TypeError):
-            return "0:00"
-    
-    @app.template_filter('time_ago')
-    def time_ago(dt):
-        """Format datetime as time ago"""
-        from datetime import datetime, timezone
-        
-        if not dt:
-            return ""
-        
-        # Ensure timezone aware
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        
-        now = datetime.now(timezone.utc)
-        diff = now - dt
-        
-        seconds = diff.total_seconds()
-        
-        if seconds < 60:
-            return "just now"
-        elif seconds < 3600:
-            minutes = int(seconds / 60)
-            return f"{minutes}m ago"
-        elif seconds < 86400:
-            hours = int(seconds / 3600)
-            return f"{hours}h ago"
-        elif seconds < 604800:
-            days = int(seconds / 86400)
-            return f"{days}d ago"
-        else:
-            return dt.strftime('%b %d, %Y')
-    
-    # ============================================
-    # Context Processors
-    # ============================================
-    
-    @app.context_processor
-    def inject_global_data():
-        """Inject data available in all templates"""
-        from flask import request
-        from datetime import datetime
-        
-        return {
-            'current_year': datetime.now().year,
-            'current_date': datetime.now().strftime('%B %d, %Y'),
-            'app_name': 'TubeAlgo',
-            'app_version': '2.0.0',
-            'request_path': request.path
-        }
-    
-    # ============================================
-    # Startup Tasks
-    # ============================================
-    
+
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return render_template('errors/404.html'), 404
+
     with app.app_context():
-        # Create tables if they don't exist
-        db.create_all()
-        
-        # Initialize default data
-        from tubealgo.models.user_models import Plan
-        
-        # Check if default plans exist
-        if Plan.query.count() == 0:
-            # Create default plans
-            plans = [
-                Plan(
-                    name='Free',
-                    price=0,
-                    currency='INR',
-                    features={
-                        'daily_searches': 10,
-                        'competitor_tracking': 2,
-                        'ai_generations': 5,
-                        'video_analysis': 10,
-                        'advanced_analytics': False
-                    },
-                    is_active=True
-                ),
-                Plan(
-                    name='Basic',
-                    price=499,
-                    currency='INR',
-                    features={
-                        'daily_searches': 50,
-                        'competitor_tracking': 5,
-                        'ai_generations': 50,
-                        'video_analysis': 100,
-                        'advanced_analytics': True,
-                        'bulk_operations': True
-                    },
-                    is_active=True
-                ),
-                Plan(
-                    name='Pro',
-                    price=999,
-                    currency='INR',
-                    features={
-                        'daily_searches': -1,  # Unlimited
-                        'competitor_tracking': 20,
-                        'ai_generations': 500,
-                        'video_analysis': -1,  # Unlimited
-                        'advanced_analytics': True,
-                        'bulk_operations': True,
-                        'priority_support': True,
-                        'api_access': True
-                    },
-                    is_active=True
-                )
-            ]
-            
-            for plan in plans:
-                db.session.add(plan)
-            
-            db.session.commit()
-            app.logger.info('Default plans created')
-    
-    app.logger.info('TubeAlgo application initialized successfully')
-    
+        try:
+            print("Checking database connection...")
+            db.session.execute(text('SELECT 1'))
+            print("Database connection successful.")
+            seed_plans()
+            print("Initializing AI clients within app context...")
+            initialize_ai_clients()
+
+        except OperationalError as e:
+            print(f"FATAL: Database operation failed during init. Check DB connection string and reachability: {e}")
+            log_system_event("DB Connection Error on Startup", "ERROR", details=str(e))
+        except Exception as e:
+            print(f"Error during app context initialization: {e}")
+            import traceback
+            traceback.print_exc()
+            log_system_event("App Init Error", "ERROR", details=str(e), traceback_info=traceback.format_exc())
+
+
     return app
 
+def format_relative_time(dt_input):
+    """Jinja filter to format datetime object or string into relative time."""
+    if not dt_input: return ""
+    dt_obj = None
+    if isinstance(dt_input, str):
+        try: dt_obj = datetime.fromisoformat(dt_input.replace('Z', '+00:00'))
+        except ValueError: return dt_input
+    elif isinstance(dt_input, datetime): dt_obj = dt_input
+    else: return str(dt_input)
 
-# ============================================
-# Celery Configuration (Disabled)
-# ============================================
+    if not dt_obj: return str(dt_input)
+    if dt_obj.tzinfo is None: dt_obj = dt_obj.replace(tzinfo=timezone.utc)
 
-# Uncomment when Redis is available:
+    now = datetime.now(timezone.utc)
+    diff = now - dt_obj
+    seconds = diff.total_seconds()
 
-# def make_celery(app):
-#     """Create Celery instance"""
-#     from celery import Celery
-#     
-#     celery = Celery(
-#         app.import_name,
-#         backend=app.config['CELERY_RESULT_BACKEND'],
-#         broker=app.config['CELERY_BROKER_URL']
-#     )
-#     celery.conf.update(app.config)
-#     
-#     class ContextTask(celery.Task):
-#         def __call__(self, *args, **kwargs):
-#             with app.app_context():
-#                 return self.run(*args, **kwargs)
-#     
-#     celery.Task = ContextTask
-#     return celery
+    if seconds < 0: return "in the future"
+    if seconds < 60: return "just now"
+    minutes = seconds / 60
+    if minutes < 60: return f"{int(minutes)} minute{'s' if int(minutes) > 1 else ''} ago"
+    hours = minutes / 60
+    if hours < 24: return f"{int(hours)} hour{'s' if int(hours) > 1 else ''} ago"
+    days = hours / 24
+    if days < 7: return f"{int(days)} day{'s' if int(days) > 1 else ''} ago"
+    weeks = days / 7
+    if weeks < 4.345: return f"{int(weeks)} week{'s' if int(weeks) > 1 else ''} ago"
+    months = days / 30.437
+    if months < 12: return f"{int(months)} month{'s' if int(months) > 1 else ''} ago"
+    years = days / 365.25
+    return f"{int(years)} year{'s' if int(years) > 1 else ''} ago"
 
-# Temporary: No Celery
-celery = None
+def seed_plans():
+    """Seeds the database with default subscription plans if none exist."""
+    from .models import SubscriptionPlan
+    from sqlalchemy import inspect
+    try:
+        inspector = inspect(db.engine)
+        if inspector.has_table(SubscriptionPlan.__tablename__):
+            if SubscriptionPlan.query.count() == 0:
+                print("Seeding subscription plans...")
+                free_plan = SubscriptionPlan(
+                    plan_id='free', name='Free', price=0, competitors_limit=2,
+                    keyword_searches_limit=5, ai_generations_limit=3, playlist_suggestions_limit=3, has_comment_reply=False
+                )
+                creator_plan = SubscriptionPlan(
+                    plan_id='creator', name='Creator', price=39900, slashed_price=79900,
+                    competitors_limit=10, keyword_searches_limit=50, ai_generations_limit=30,
+                    has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=10,
+                    is_popular=True, has_comment_reply=False
+                )
+                pro_plan = SubscriptionPlan(
+                    plan_id='pro', name='Pro', price=99900, slashed_price=199900,
+                    competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1,
+                    has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=-1,
+                    has_comment_reply=True
+                )
+                db.session.add_all([free_plan, creator_plan, pro_plan])
+                db.session.commit()
+                print("Plans seeded successfully.")
+        else:
+            print("SubscriptionPlan table does not exist. Skipping seeding.")
+    except OperationalError as e:
+        print(f"Skipping seed_plans due to database error: {e}")
+        db.session.rollback()
+    except Exception as e:
+        print(f"Error seeding plans: {e}")
+        db.session.rollback()

@@ -2,7 +2,6 @@
 
 from flask import render_template
 from flask_login import login_required
-from flask_wtf import FlaskForm
 from . import admin_bp
 from ... import db
 from ...decorators import admin_required
@@ -11,15 +10,10 @@ from sqlalchemy import func
 from datetime import date, datetime
 import pytz
 
-class CSRFOnlyForm(FlaskForm):
-    """A simple form containing only the CSRF token field."""
-    pass
-
 @admin_bp.route('/')
 @login_required
 @admin_required
 def dashboard():
-    """Main admin dashboard with statistics."""
     total_users = User.query.count()
     subscribed_users = User.query.filter(User.subscription_plan != 'free').count()
     users_today = User.query.filter(func.date(User.created_at) == date.today()).count()
@@ -27,7 +21,7 @@ def dashboard():
 
     api_keys_str = get_config_value('YOUTUBE_API_KEYS', '')
     api_keys_list = [key.strip() for key in api_keys_str.split(',') if key.strip()]
-
+    
     try:
         pacific_tz = pytz.timezone('America/Los_Angeles')
         pacific_now = datetime.now(pacific_tz)
@@ -47,15 +41,14 @@ def dashboard():
         if key and len(key) > 12:
             return f"{key[:8]}...{key[-4:]}"
         return "Invalid Key Format"
-
+    
     key_identifiers = [mask_key_yt(key) for key in api_keys_list]
     key_statuses_query = APIKeyStatus.query.filter(APIKeyStatus.key_identifier.in_(key_identifiers)).all()
     key_status_map = {status.key_identifier: status for status in key_statuses_query}
+    
     exhausted_today_count = sum(1 for status in key_status_map.values() if status.status == 'exhausted')
 
-    form = CSRFOnlyForm()
-
-    return render_template('admin/dashboard.html',
+    return render_template('admin/dashboard.html', 
                            total_users=total_users,
                            subscribed_users=subscribed_users,
                            users_today=users_today,
@@ -63,7 +56,4 @@ def dashboard():
                            api_key_count=len(api_keys_list),
                            key_identifiers=key_identifiers,
                            key_status_map=key_status_map,
-                           exhausted_today_count=exhausted_today_count,
-                           form=form)
-
-# NOTE: Chart endpoints are in system.py to avoid duplication
+                           exhausted_today_count=exhausted_today_count)
