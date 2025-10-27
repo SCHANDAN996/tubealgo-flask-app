@@ -16,22 +16,25 @@ from sqlalchemy.exc import OperationalError
 import pytz
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_sse import sse
-# from flask_migrate import Migrate # <<< Migrate हटा दिया गया
+# Flask-Migrate हटा दिया गया
 
 load_dotenv()
 
 db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
-# migrate = Migrate() # <<< Migrate हटा दिया गया
+# Migrate हटा दिया गया
 
 def limiter_key_func():
+    # Return a unique identifier for rate limiting (user ID or IP address)
     if current_user and current_user.is_authenticated:
         return str(current_user.id)
     return get_remote_address()
 
+# Initialize Flask-Limiter
 limiter = Limiter(key_func=limiter_key_func, default_limits=["200 per day", "50 per hour"])
 
+# Initialize Celery
 celery = Celery(__name__)
 
 
@@ -47,7 +50,8 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
             user_tz_str = current_user.timezone
         user_tz = pytz.timezone(user_tz_str)
     except pytz.UnknownTimeZoneError:
-        user_tz = pytz.timezone('Asia/Kolkata') # Fallback to default
+        # Fallback to default if user's timezone is invalid
+        user_tz = pytz.timezone('Asia/Kolkata')
 
     # Ensure utc_dt is a datetime object
     if not isinstance(utc_dt, datetime):
@@ -61,8 +65,10 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
                  utc_dt_str = utc_dt.isoformat().replace('Z', '+00:00')
                  utc_dt = datetime.fromisoformat(utc_dt_str)
             else:
-                 return str(utc_dt) # Fallback if conversion fails
+                 # If it's not a recognizable format, return as string
+                 return str(utc_dt)
         except (ValueError, TypeError):
+             # Log the error for debugging
              print(f"Could not parse datetime input: {utc_dt}")
              return str(utc_dt) # Fallback
 
@@ -75,183 +81,205 @@ def localize_datetime(utc_dt, fmt='%d %b %Y, %I:%M %p'):
         local_dt = utc_dt.astimezone(user_tz)
         return local_dt.strftime(fmt)
     except Exception as e:
+         # Log the localization error
          print(f"Error localizing datetime ({utc_dt}) to {user_tz_str}: {e}")
          # Fallback to UTC display if localization fails
          return utc_dt.strftime(fmt) + " UTC"
 
 
 def create_app():
+    """Flask application factory."""
+    # Define paths relative to the application's root
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     static_folder_path = os.path.join(project_root, 'static')
     template_folder_path = os.path.join(project_root, 'tubealgo', 'templates')
     instance_folder_path = os.path.join(project_root, 'instance')
 
+    # Initialize Flask app
     app = Flask(
-        __name__.split('.')[0],
+        __name__.split('.')[0], # Use root package name
         instance_path=instance_folder_path,
-        instance_relative_config=True,
+        instance_relative_config=True, # Load config relative to instance folder
         static_folder=static_folder_path,
         template_folder=template_folder_path
     )
 
+    # Load configuration from config.py and .env file
     app.config.from_object(config.Config)
 
+    # Create instance folder if it doesn't exist
     try:
         os.makedirs(app.instance_path, exist_ok=True)
     except OSError:
-        pass
+        pass # Ignore error if folder already exists
 
+    # Configure Redis URL for SSE
     app.config["REDIS_URL"] = app.config.get("REDIS_URL", "redis://127.0.0.1:6379/0")
     app.register_blueprint(sse, url_prefix='/stream')
 
+    # Configure Celery
     celery.conf.update(
         broker_url=app.config["CELERY_BROKER_URL"],
         result_backend=app.config["CELERY_RESULT_BACKEND"],
     )
+    # Define Celery beat schedule for periodic tasks
     celery.conf.beat_schedule = {
         'take-daily-snapshots-every-day': {
             'task': 'tubealgo.jobs.take_daily_snapshots',
-            'schedule': crontab(hour=0, minute=5, day_of_week='*'),
+            'schedule': crontab(hour=0, minute=5, day_of_week='*'), # Run daily at 00:05 UTC
         },
         'check-for-new-videos-every-hour': {
             'task': 'tubealgo.jobs.check_for_new_videos',
-            'schedule': crontab(minute=0, hour='*'),
+            'schedule': crontab(minute=0, hour='*'), # Run at the start of every hour
         },
         'update-all-dashboards-every-4-hours': {
             'task': 'tubealgo.jobs.update_all_dashboards',
-            'schedule': crontab(minute=15, hour='*/4'),
+            'schedule': crontab(minute=15, hour='*/4'), # Run every 4 hours at xx:15
         },
          'take-video-snapshots-every-3-hours': {
             'task': 'tubealgo.jobs.take_video_snapshots',
-            'schedule': crontab(minute=30, hour='*/3'),
+            'schedule': crontab(minute=30, hour='*/3'), # Run every 3 hours at xx:30
         },
         'cleanup-old-snapshots-daily': {
             'task': 'tubealgo.jobs.cleanup_old_snapshots',
-            'schedule': crontab(hour=1, minute=0, day_of_week='*'),
+            'schedule': crontab(hour=1, minute=0, day_of_week='*'), # Run daily at 01:00 UTC
         },
     }
 
+    # Configure Celery Task context to work within Flask app context
     class ContextTask(Task):
         def __call__(self, *args, **kwargs):
             with app.app_context():
                 return self.run(*args, **kwargs)
     celery.Task = ContextTask
-    app.celery = celery
+    app.celery = celery # Attach celery instance to app
 
+    # Initialize extensions
     db.init_app(app)
     csrf.init_app(app)
     login_manager.init_app(app)
-    login_manager.login_view = 'auth_local.login'
-    login_manager.login_message_category = "error"
+    login_manager.login_view = 'auth_local.login' # Route to redirect unauthenticated users
+    login_manager.login_message_category = "error" # Flash message category
     # migrate.init_app(app, db) # <<< Migrate हटा दिया गया
 
-    limiter_storage_uri = app.config.get("REDIS_URL", "memory://")
+    # Initialize Flask-Limiter
+    limiter_storage_uri = app.config.get("REDIS_URL", "memory://") # Use Redis if available
     limiter.init_app(app)
 
+    # --- Request Hooks ---
     @app.before_request
     def before_request_handler():
+        """Update user's last_seen timestamp."""
         if current_user.is_authenticated:
+            # Update only periodically (e.g., every 5 minutes) to reduce DB writes
             five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+            # Handle case where last_seen might be None initially
             last_seen_time = current_user.last_seen or datetime.utcnow() - timedelta(days=1)
 
             if last_seen_time < five_minutes_ago:
                 current_user.last_seen = datetime.utcnow()
                 try:
-                    # Attempt to commit without adding, as user object is already managed
+                    # Commit the change directly (user object is already in session)
                     db.session.commit()
                 except Exception as e:
                     db.session.rollback()
-                    # Log error more quietly in production
+                    # Log the error but don't crash the request
                     app.logger.error(f"Error updating last_seen for user {current_user.id}: {e}")
-                    # print(f"Error updating last_seen for user {current_user.id}: {e}") # Keep for local debug
-
 
     @app.after_request
     def add_security_headers(response):
+        """Add common security headers to responses."""
         response.headers['X-Content-Type-Options'] = 'nosniff'
-        # Consider making CSP stricter if possible
-        response.headers['Content-Security-Policy'] = "frame-ancestors 'self'"
-        # Remove deprecated headers if set by default
+        response.headers['Content-Security-Policy'] = "frame-ancestors 'self'" # Prevent clickjacking
+        # Remove deprecated headers if set by default by the framework/server
         response.headers.pop('X-Frame-Options', None)
         response.headers.pop('X-XSS-Protection', None)
-        # Prevent caching of dynamic HTML pages
+        # Prevent caching of dynamic HTML pages to avoid showing stale data
         if response.mimetype == 'text/html':
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
         return response
 
+    # --- Context Processors ---
     @app.context_processor
     def override_url_for():
+        """Make url_for available in templates without needing explicit import."""
         return dict(url_for=url_for)
 
     @app.context_processor
     def inject_now_and_settings():
-        from .models import get_setting
+        """Inject current UTC time and get_setting function into templates."""
+        from .models import get_setting # Local import to avoid circular dependency
         return {'now': datetime.utcnow, 'get_setting': get_setting}
 
     @app.context_processor
     def inject_csrf_token():
+        """Make CSRF token generation available in templates."""
         return dict(csrf_token=generate_csrf)
 
-    # Register Jinja filters
+    # --- Register Jinja Filters ---
     app.jinja_env.filters['relative_time'] = format_relative_time
     app.jinja_env.filters['localize'] = localize_datetime
 
-    # Register Error Handlers
+    # --- Register Error Handlers ---
     @app.errorhandler(500)
     def internal_error(error):
-        db.session.rollback() # Rollback on error
-        app.logger.error(f"Internal Server Error: {error}", exc_info=True) # Log the error
-        # Optionally, you could pass the error to the template for debugging if app.debug is True
+        """Handle internal server errors (500)."""
+        db.session.rollback() # Rollback potentially broken transactions
+        app.logger.error(f"Internal Server Error: {error}", exc_info=True) # Log detailed error
         return render_template('errors/500.html'), 500
 
     @app.errorhandler(404)
     def not_found_error(error):
+        """Handle page not found errors (404)."""
         return render_template('errors/404.html'), 404
 
-    # Application context block for initial setup
+    # --- Application context block for initial setup ---
     with app.app_context():
         try:
             print("Checking database connection...")
             # Use inspect to check for a common table like 'user'
             inspector = inspect(db.engine)
-            table_exists = inspector.has_table("user") # Check for 'user' table
+            table_exists = inspector.has_table("user") # Check specifically for the 'user' table
             print(f"Database connection successful. 'user' table exists: {table_exists}")
 
             # <<< Create tables ONLY if 'user' table does NOT exist >>>
+            # This prevents errors if tables already exist and avoids needing migrations for simple setups
             if not table_exists:
                 print("Tables not found, creating all tables...")
-                db.create_all()
+                db.create_all() # Create tables based on all defined models
                 print("Database tables created.")
-                # Seed plans after creating tables
+                # Seed plans only immediately after creating tables for the first time
                 seed_plans()
             else:
-                # If tables exist, still try to seed plans (it checks internally if empty)
-                seed_plans()
+                # If tables exist, check if plans need seeding (e.g., if plan table is empty)
+                seed_plans() # The function itself checks if seeding is needed
 
             print("Initializing AI clients within app context...")
+            # Import and initialize AI clients (e.g., Gemini)
             from .services.ai_service import initialize_ai_clients
             initialize_ai_clients()
 
         except OperationalError as e:
-            # Handle potential connection errors gracefully
-            print(f"ERROR: Database connection failed during init (OperationalError): {e}. App might not function correctly.")
-            # Optionally log this as a critical error
+            # Handle potential database connection errors gracefully during startup
+            print(f"ERROR: Database connection/operation failed during init (OperationalError): {e}. App might not function correctly.")
+            db.session.rollback() # Rollback the session
+            # Log this as a critical error for monitoring
             from .models import log_system_event # Local import
-            log_system_event("DB Connection Error on Startup", "ERROR", details=str(e))
-            # No rollback needed if connection failed before operations
+            log_system_event("DB Connection/Operation Error on Startup", "ERROR", details=str(e))
         except Exception as e:
+            # Handle any other unexpected errors during initialization
             print(f"Error during app context initialization: {e}")
             import traceback
             traceback.print_exc()
-            db.session.rollback() # Rollback on other errors
+            db.session.rollback() # Rollback on other errors too
             from .models import log_system_event # Local import
             log_system_event("App Init Error", "ERROR", details=str(e), traceback_info=traceback.format_exc())
 
 
     # --- Import and register Blueprints ---
-    # (Blueprints need to be imported AFTER app, db, etc. are defined)
+    # (Blueprints define the routes/views of the application)
     from .auth_local import auth_local_bp
     app.register_blueprint(auth_local_bp, url_prefix='/')
 
@@ -271,10 +299,10 @@ def create_app():
     app.register_blueprint(analysis_bp, url_prefix='/')
 
     from .routes.api_routes import api_bp
-    app.register_blueprint(api_bp)
+    app.register_blueprint(api_bp) # Assumes default prefix '/' or defined within blueprint
 
     from .routes.ai_api_routes import ai_api_bp
-    app.register_blueprint(ai_api_bp)
+    app.register_blueprint(ai_api_bp) # Assumes prefix defined within blueprint
 
     from .routes.tool_routes import tool_bp
     app.register_blueprint(tool_bp, url_prefix='/')
@@ -285,9 +313,11 @@ def create_app():
     from .routes.payment_routes import payment_bp
     app.register_blueprint(payment_bp, url_prefix='/payment')
 
-    from .routes.admin import admin_bp # Correct Admin Import
+    # Import the admin blueprint package
+    from .routes.admin import admin_bp
     app.register_blueprint(admin_bp, url_prefix='/admin')
 
+    # Import manager related blueprints
     from .routes.video_manager_routes import video_manager_bp
     app.register_blueprint(video_manager_bp, url_prefix='/manage')
 
@@ -297,6 +327,7 @@ def create_app():
     from .routes.ab_test_routes import ab_test_bp
     app.register_blueprint(ab_test_bp, url_prefix='/manage')
 
+    # Other blueprints
     from .routes.report_routes import report_bp
     app.register_blueprint(report_bp)
 
@@ -312,34 +343,44 @@ def create_app():
     from .routes.user_routes import user_bp
     app.register_blueprint(user_bp)
 
-    # Exempt specific blueprints from CSRF protection if needed
+
+    # Exempt specific blueprints from CSRF protection if they handle external webhooks/APIs
     csrf.exempt(api_bp)
     csrf.exempt(ai_api_bp)
     csrf.exempt(payment_bp)
 
-    from . import models # Ensure models are loaded before db.create_all might be called implicitly
+    # Import models at the end to ensure db is initialized and blueprints are registered
+    # This also makes models available if db.create_all() is called elsewhere
+    from . import models
 
+    # Return the configured app instance
     return app
 
-# --- format_relative_time function (remains the same) ---
+# --- Helper Functions ---
+
 def format_relative_time(dt_input):
+    """Jinja filter to format datetime object or string into relative time (e.g., '5 minutes ago')."""
     if not dt_input: return ""
     dt_obj = None
+    # Convert input to datetime object if it's a string
     if isinstance(dt_input, str):
         try: dt_obj = datetime.fromisoformat(dt_input.replace('Z', '+00:00'))
-        except ValueError: return dt_input
+        except ValueError: return dt_input # Return original string if parsing fails
     elif isinstance(dt_input, datetime): dt_obj = dt_input
-    else: return str(dt_input)
+    else: return str(dt_input) # Return string representation if not datetime or string
 
-    if not dt_obj: return str(dt_input)
-    # Ensure timezone aware (assume UTC if naive)
+    if not dt_obj: return str(dt_input) # Fallback
+
+    # Ensure the datetime object is timezone-aware (assume UTC if naive)
     if dt_obj.tzinfo is None: dt_obj = dt_obj.replace(tzinfo=timezone.utc)
 
     now = datetime.now(timezone.utc)
     diff = now - dt_obj
     seconds = diff.total_seconds()
 
-    if seconds < 0: return "in the future" # Should ideally not happen for last_seen
+    # Handle future dates (should ideally not happen for 'last seen')
+    if seconds < 0: return "in the future"
+    # Provide human-readable relative time
     if seconds < 60: return "just now"
     minutes = seconds / 60
     if minutes < 60: return f"{int(minutes)} minute{'s' if int(minutes) > 1 else ''} ago"
@@ -354,16 +395,18 @@ def format_relative_time(dt_input):
     years = days / 365.25 # Account for leap years
     return f"{int(years)} year{'s' if int(years) > 1 else ''} ago"
 
-# --- seed_plans function (remains the same) ---
 def seed_plans():
     """Seeds the database with default subscription plans if table exists and is empty."""
-    from .models import SubscriptionPlan # Local import
-    from sqlalchemy import inspect # Local import
+    from .models import SubscriptionPlan # Local import for models
+    from sqlalchemy import inspect # Local import for inspect
     try:
         inspector = inspect(db.engine)
-        if inspector.has_table(SubscriptionPlan.__tablename__): # Check if table exists
-            if SubscriptionPlan.query.count() == 0: # Check if table is empty
+        # Check if the SubscriptionPlan table exists in the database
+        if inspector.has_table(SubscriptionPlan.__tablename__):
+            # Check if the table is currently empty
+            if SubscriptionPlan.query.count() == 0:
                 print("Seeding subscription plans...")
+                # Define default plan objects
                 free_plan = SubscriptionPlan(
                     plan_id='free', name='Free', price=0, competitors_limit=2,
                     keyword_searches_limit=5, ai_generations_limit=3, playlist_suggestions_limit=3, has_comment_reply=False
@@ -376,21 +419,25 @@ def seed_plans():
                 )
                 pro_plan = SubscriptionPlan(
                     plan_id='pro', name='Pro', price=99900, slashed_price=199900,
-                    competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1,
+                    competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1, # -1 signifies unlimited
                     has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=-1,
                     has_comment_reply=True
                 )
+                # Add plans to session and commit
                 db.session.add_all([free_plan, creator_plan, pro_plan])
                 db.session.commit()
                 print("Plans seeded successfully.")
             # else:
-                # print("SubscriptionPlan table already has data. Skipping seeding.") # Optional info message
+                # Optionally log that seeding is skipped because table has data
+                # print("SubscriptionPlan table already has data. Skipping seeding.")
         # else:
-            # print("SubscriptionPlan table does not exist yet. Skipping seeding.") # Optional info message
+            # Optionally log that seeding is skipped because table doesn't exist yet
+            # print("SubscriptionPlan table does not exist yet. Skipping seeding.")
     except OperationalError as e:
-        # This might happen if DB connection fails during seeding attempt
+        # Handle potential errors during database operations (e.g., connection issues)
         print(f"Skipping seed_plans due to database error (OperationalError): {e}")
-        db.session.rollback()
+        db.session.rollback() # Rollback the transaction
     except Exception as e:
+        # Handle any other unexpected errors during seeding
         print(f"Error seeding plans: {e}")
-        db.session.rollback()
+        db.session.rollback() # Rollback the transaction
