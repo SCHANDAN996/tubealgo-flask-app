@@ -1,262 +1,402 @@
 # tubealgo/routes/competitor_routes.py
+"""
+Competitor Analysis Routes
+Updated to work without Redis/Celery (synchronous processing)
+"""
 
-from flask import render_template, request, redirect, url_for, flash, Blueprint, jsonify
+from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
-from flask_wtf import FlaskForm
 from tubealgo import db
-from tubealgo.models import Competitor, SubscriptionPlan, User, ContentIdea
-from tubealgo.services.channel_fetcher import analyze_channel
-from tubealgo.services.discovery_fetcher import (
-    get_youtube_categories, get_top_channels_by_category, 
-    find_similar_channels
-)
-from tubealgo.services.notification_service import send_telegram_photo_with_caption
-from tubealgo.services.ai_service import generate_idea_from_competitor, analyze_transcript_with_ai
-from tubealgo.routes.api_routes import get_full_competitor_package
-from tubealgo.routes.utils import get_video_info_dict
-from tubealgo.decorators import check_limits, RateLimitExceeded
-import json
-from tubealgo.jobs import perform_full_analysis
-from youtube_transcript_api import YouTubeTranscriptApi
+from tubealgo.models.youtube_models import Competitor
+from tubealgo.services.channel_fetcher import fetch_channel_details
+from tubealgo.services.cache_manager import CacheManager
+from tubealgo.decorators import plan_required
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+competitor_bp = Blueprint('competitor', __name__, url_prefix='/competitors')
+cache = CacheManager()
 
 
-competitor_bp = Blueprint('competitor', __name__)
-
-@competitor_bp.route('/competitors', methods=['GET'])
+@competitor_bp.route('/')
 @login_required
-def competitors():
-    user_competitors_query = current_user.competitors.order_by(Competitor.position.asc()).all()
-    competitors_list = [{"id": comp.id, "channel_id_youtube": comp.channel_id_youtube, "channel_title": comp.channel_title} for comp in user_competitors_query]
+def competitors_page():
+    """Competitor tracking dashboard"""
     
-    # Pass the form object to the template for CSRF token
-    form = FlaskForm() 
+    # Get user's tracked competitors
+    competitors = Competitor.query.filter_by(
+        user_id=current_user.id
+    ).order_by(Competitor.added_at.desc()).all()
     
-    plan = SubscriptionPlan.query.filter_by(plan_id=current_user.subscription_plan).first() or SubscriptionPlan.query.filter_by(plan_id='free').first()
+    # Get plan limits
+    plan_limit = 2  # Free plan default
+    if current_user.plan:
+        plan_limit = current_user.plan.features.get('competitor_tracking', 2)
     
-    return render_template('competitors.html', 
-                           competitors=user_competitors_query,
-                           competitors_json=json.dumps(competitors_list),
-                           form=form,
-                           competitor_limit=plan.competitors_limit if plan else 0,
-                           active_page='competitors')
+    return render_template(
+        'competitors.html',
+        competitors=competitors,
+        competitors_count=len(competitors),
+        plan_limit=plan_limit,
+        can_add_more=len(competitors) < plan_limit
+    )
 
-@competitor_bp.route('/competitors/add', methods=['POST'])
+
+@competitor_bp.route('/add', methods=['POST'])
 @login_required
+@plan_required('free')
 def add_competitor():
+    """
+    Add new competitor to track
+    
+    UPDATED: Works without Celery/Redis
+    Uses synchronous processing
+    
+    Request JSON:
+    {
+        "channel_id": "UCxxxxx",
+        "channel_url": "https://youtube.com/@channelname"  # Alternative
+    }
+    """
+    
     try:
-        plan = SubscriptionPlan.query.filter_by(plan_id=current_user.subscription_plan).first() or SubscriptionPlan.query.filter_by(plan_id='free').first()
-        limit = plan.competitors_limit if plan else 0
-        if limit != -1 and current_user.competitors.count() >= limit:
-            return jsonify({'success': False, 'error': f"You have reached your limit of {limit} competitors."}), 403
-
         data = request.get_json()
-        if not data:
-            return jsonify({'success': False, 'error': 'Invalid request. Missing JSON data.'}), 400
-
-        channel_id_from_selection = data.get('channel_id_hidden')
-        channel_query_from_input = data.get('channel_url')
         
-        search_input = None
-
-        if channel_id_from_selection and channel_id_from_selection.strip().startswith('UC'):
-            search_input = channel_id_from_selection.strip()
-        elif channel_query_from_input and channel_query_from_input.strip():
-            search_input = channel_query_from_input.strip()
-
-        if not search_input:
-            return jsonify({'success': False, 'error': 'Please enter a channel name or URL.'}), 400
+        # Get channel ID from request
+        channel_id = data.get('channel_id')
+        channel_url = data.get('channel_url')
         
-        analysis_data = analyze_channel(search_input)
+        if not channel_id and not channel_url:
+            return jsonify({
+                'success': False,
+                'error': 'Channel ID or URL is required'
+            }), 400
         
-        if 'error' in analysis_data:
-            return jsonify({'success': False, 'error': analysis_data['error']}), 400
+        # Extract channel ID from URL if provided
+        if channel_url and not channel_id:
+            from tubealgo.services.youtube_core import extract_channel_id_from_url
+            channel_id = extract_channel_id_from_url(channel_url)
+            
+            if not channel_id:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid YouTube channel URL'
+                }), 400
         
-        existing = Competitor.query.filter_by(user_id=current_user.id, channel_id_youtube=analysis_data['id']).first()
+        # Check plan limits
+        current_count = Competitor.query.filter_by(user_id=current_user.id).count()
+        plan_limit = 2  # Free plan default
+        
+        if current_user.plan:
+            plan_limit = current_user.plan.features.get('competitor_tracking', 2)
+        
+        if current_count >= plan_limit:
+            return jsonify({
+                'success': False,
+                'error': f'You have reached your plan limit of {plan_limit} competitors. Upgrade to track more.'
+            }), 403
+        
+        # Check if already tracking this competitor
+        existing = Competitor.query.filter_by(
+            user_id=current_user.id,
+            channel_id=channel_id
+        ).first()
+        
         if existing:
-            return jsonify({'success': False, 'error': f"'{analysis_data['Title']}' is already in your list."}), 409
-
+            return jsonify({
+                'success': False,
+                'error': 'You are already tracking this competitor'
+            }), 400
         
-        Competitor.query.filter_by(user_id=current_user.id).update({Competitor.position: Competitor.position + 1})
-        db.session.flush()
-
-        new_competitor = Competitor(
-            user_id=current_user.id, 
-            channel_id_youtube=analysis_data['id'], 
-            channel_title=analysis_data['Title'], 
-            thumbnail_url=analysis_data.get('Thumbnail URL', ''), 
-            position=1 
+        # Try to get from cache first
+        cache_key = f"channel_analysis_v6:{channel_id}"
+        channel_data = cache.get(cache_key)
+        
+        if not channel_data:
+            logger.info(f"Cache miss for channel: {channel_id}")
+            
+            # Fetch channel details synchronously (NO Celery)
+            try:
+                youtube_api_key = current_app.config['YOUTUBE_API_KEYS'][0]
+                channel_data = fetch_channel_details(channel_id, youtube_api_key)
+                
+                if not channel_data:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Could not fetch channel details. Please check the channel ID.'
+                    }), 404
+                
+                # Cache for 1 hour
+                cache.set(cache_key, channel_data, ttl=3600)
+                logger.info(f"Cached channel data for: {channel_id}")
+                
+            except Exception as e:
+                logger.error(f"Error fetching channel: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to fetch channel details. Please try again.'
+                }), 500
+        else:
+            logger.info(f"Cache hit for channel: {channel_id}")
+        
+        # Create competitor record
+        competitor = Competitor(
+            user_id=current_user.id,
+            channel_id=channel_id,
+            channel_title=channel_data.get('title', 'Unknown'),
+            custom_name=channel_data.get('title'),  # User can rename later
+            subscriber_count=channel_data.get('subscriber_count', 0),
+            video_count=channel_data.get('video_count', 0),
+            view_count=channel_data.get('view_count', 0),
+            thumbnail_url=channel_data.get('thumbnail'),
+            added_at=datetime.utcnow(),
+            last_updated=datetime.utcnow()
         )
-        db.session.add(new_competitor)
+        
+        db.session.add(competitor)
         db.session.commit()
-
-        perform_full_analysis.delay(new_competitor.id)
-
+        
+        logger.info(f"Competitor added successfully: {channel_id} by user {current_user.id}")
+        
         return jsonify({
             'success': True,
+            'message': 'Competitor added successfully!',
             'competitor': {
-                "id": new_competitor.id, 
-                "channel_id_youtube": new_competitor.channel_id_youtube, 
-                "channel_title": new_competitor.channel_title
+                'id': competitor.id,
+                'channel_id': channel_id,
+                'channel_title': competitor.channel_title,
+                'subscriber_count': competitor.subscriber_count,
+                'video_count': competitor.video_count,
+                'thumbnail_url': competitor.thumbnail_url
             }
-        }), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'error': f'An unexpected server error occurred: {str(e)}'}), 500
-
-@competitor_bp.route('/competitors/delete/<int:competitor_id>', methods=['POST'])
-@login_required
-def delete_competitor(competitor_id):
-    comp = Competitor.query.get_or_404(competitor_id)
-    if comp.user_id != current_user.id:
-        return redirect(url_for('competitor.competitors'))
-    
-    from tubealgo.models import ApiCache
-    cache_key = f"competitor_package_v6:{competitor_id}" 
-    ApiCache.query.filter_by(cache_key=cache_key).delete()
-    
-    deleted_position = comp.position
-    db.session.delete(comp)
-    
-    Competitor.query.filter(Competitor.user_id == current_user.id, Competitor.position > deleted_position).update({Competitor.position: Competitor.position - 1})
-    db.session.commit()
-    flash(f"'{comp.channel_title}' has been removed.", 'success')
-    return redirect(url_for('competitor.competitors'))
-
-@competitor_bp.route('/competitors/move/<int:competitor_id>/<direction>', methods=['POST'])
-@login_required
-def move_competitor(competitor_id, direction):
-    comp_to_move = Competitor.query.get_or_404(competitor_id)
-    if comp_to_move.user_id != current_user.id:
-        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
-
-    current_pos = comp_to_move.position
-    
-    if direction == 'up':
-        swap_pos = current_pos - 1
-    elif direction == 'down':
-        swap_pos = current_pos + 1
-    else:
-        return jsonify({'success': False, 'error': 'Invalid direction'}), 400
-
-    comp_to_swap = Competitor.query.filter_by(user_id=current_user.id, position=swap_pos).first()
-
-    if comp_to_swap:
-        comp_to_move.position, comp_to_swap.position = comp_to_swap.position, comp_to_move.position
-        db.session.commit()
-        return jsonify({'success': True, 'message': 'Position updated.'})
-    
-    return jsonify({'success': False, 'error': 'Move out of bounds'}), 400
-
-@competitor_bp.route('/discover', methods=['GET', 'POST'])
-@login_required
-def discover():
-    categories = get_youtube_categories()
-    top_channels, similar_channels = [], []
-    selected_category_id, searched_channel_name = None, ""
-    if request.method == 'POST':
-        form_type = request.form.get('form_type')
-        if form_type == 'category_search':
-            selected_category_id = request.form.get('category_id')
-            if selected_category_id:
-                top_channels = get_top_channels_by_category(selected_category_id)
-                if not top_channels: flash('No popular channels found for this category.', 'info')
-        elif form_type == 'similar_search':
-            searched_channel_name = request.form.get('channel_url')
-            if searched_channel_name:
-                source_data = analyze_channel(searched_channel_name)
-                if 'error' in source_data:
-                    flash(source_data['error'], 'error')
-                else:
-                    similar_channels = find_similar_channels(source_data['id'])
-                    if not similar_channels: flash(f"Could not find channels similar to '{source_data['Title']}'.", 'info')
-    return render_template('discover.html', categories=categories, top_channels=top_channels, similar_channels=similar_channels, selected_category_id=selected_category_id, searched_channel_name=searched_channel_name, active_page='discover')
-
-@competitor_bp.route('/video/<video_id>/send/telegram')
-@login_required
-def send_video_to_telegram(video_id):
-    if not current_user.telegram_chat_id:
-        flash('Please set your Telegram Chat ID in settings first.', 'error')
-        return redirect(url_for('analysis.video_analysis', video_id=video_id))
-    
-    video_info = get_video_info_dict(video_id)
-    if 'error' in video_info:
-        flash(video_info['error'], 'error')
-        return redirect(url_for('analysis.video_analysis', video_id=video_id))
-    
-    caption = (
-        f"📊 *Video Analysis for:* {video_info['title']}\n\n"
-        f"👀 Views: *{video_info['views']:,}*\n"
-        f"👍 Likes: *{video_info['likes']:,}*\n"
-        f"💬 Comments: *{video_info['comments']:,}*\n\n"
-        f"[Watch on YouTube](https://youtu.be/{video_info['id']})"
-    )
-    send_telegram_photo_with_caption(current_user.telegram_chat_id, video_info['thumbnail_url'], caption)
-    flash('Analysis has been sent to your Telegram!', 'success')
-    return redirect(url_for('analysis.video_analysis', video_id=video_id))
-
-@competitor_bp.route('/api/competitor/add-idea-from-video', methods=['POST'])
-@login_required
-def add_idea_from_competitor_video():
-    try:
-        @check_limits(feature='ai_generation')
-        def do_generation():
-            data = request.json
-            title = data.get('title')
-            if not title:
-                return jsonify({'error': 'Video title is required'}), 400
-
-            ai_result = generate_idea_from_competitor(title)
-            if 'error' in ai_result or 'new_title' not in ai_result:
-                return jsonify({'error': 'AI could not generate an idea.'}), 500
-            
-            new_title = ai_result['new_title']
-
-            max_position = db.session.query(db.func.max(ContentIdea.position)).filter_by(user_id=current_user.id, status='idea').scalar() or -1
-            
-            new_idea = ContentIdea(
-                user_id=current_user.id,
-                title=new_title,
-                display_title=new_title,
-                status='idea',
-                position=max_position + 1
-            )
-            db.session.add(new_idea)
-            db.session.commit()
-            
-            return jsonify({'success': True, 'message': f"Idea '{new_title}' added to your planner!"})
-
-        return do_generation()
-    except RateLimitExceeded as e:
-        return jsonify({'error': str(e)}), 429
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': 'An unexpected error occurred.'}), 500
-
-@competitor_bp.route('/api/competitor/analyze-transcript/<string:video_id>', methods=['POST'])
-@login_required
-def analyze_transcript(video_id):
-    try:
-        @check_limits(feature='ai_generation')
-        def do_analysis():
-            try:
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                full_transcript = " ".join([item['text'] for item in transcript_list])
-            except Exception as e:
-                error_message = str(e)
-                if "Could not retrieve a transcript for the video" in error_message:
-                    error_message = "Transcripts are disabled for this video."
-                return jsonify({'error': error_message}), 404
-            
-            ai_analysis = analyze_transcript_with_ai(full_transcript)
-            
-            if 'error' in ai_analysis:
-                return jsonify({'error': ai_analysis['error']}), 500
-            
-            return jsonify(ai_analysis)
+        })
         
-        return do_analysis()
-    
-    except RateLimitExceeded as e:
-        return jsonify({'error': str(e)}), 429
     except Exception as e:
-        return jsonify({'error': 'An unexpected server error occurred.'}), 500
+        logger.error(f"Error adding competitor: {str(e)}")
+        db.session.rollback()
+        
+        return jsonify({
+            'success': False,
+            'error': 'An error occurred while adding competitor. Please try again.'
+        }), 500
+
+
+@competitor_bp.route('/remove/<int:competitor_id>', methods=['POST'])
+@login_required
+def remove_competitor(competitor_id):
+    """Remove competitor from tracking"""
+    
+    try:
+        competitor = Competitor.query.filter_by(
+            id=competitor_id,
+            user_id=current_user.id
+        ).first()
+        
+        if not competitor:
+            return jsonify({
+                'success': False,
+                'error': 'Competitor not found'
+            }), 404
+        
+        db.session.delete(competitor)
+        db.session.commit()
+        
+        logger.info(f"Competitor removed: {competitor_id} by user {current_user.id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Competitor removed successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error removing competitor: {str(e)}")
+        db.session.rollback()
+        
+        return jsonify({
+            'success': False,
+            'error': 'Failed to remove competitor'
+        }), 500
+
+
+@competitor_bp.route('/update/<int:competitor_id>', methods=['POST'])
+@login_required
+def update_competitor(competitor_id):
+    """Update competitor data (refresh)"""
+    
+    try:
+        competitor = Competitor.query.filter_by(
+            id=competitor_id,
+            user_id=current_user.id
+        ).first()
+        
+        if not competitor:
+            return jsonify({
+                'success': False,
+                'error': 'Competitor not found'
+            }), 404
+        
+        # Fetch fresh data
+        youtube_api_key = current_app.config['YOUTUBE_API_KEYS'][0]
+        channel_data = fetch_channel_details(competitor.channel_id, youtube_api_key)
+        
+        if not channel_data:
+            return jsonify({
+                'success': False,
+                'error': 'Could not fetch updated data'
+            }), 500
+        
+        # Update competitor
+        competitor.subscriber_count = channel_data.get('subscriber_count', 0)
+        competitor.video_count = channel_data.get('video_count', 0)
+        competitor.view_count = channel_data.get('view_count', 0)
+        competitor.last_updated = datetime.utcnow()
+        
+        db.session.commit()
+        
+        # Update cache
+        cache_key = f"channel_analysis_v6:{competitor.channel_id}"
+        cache.set(cache_key, channel_data, ttl=3600)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Competitor data updated',
+            'competitor': {
+                'subscriber_count': competitor.subscriber_count,
+                'video_count': competitor.video_count,
+                'view_count': competitor.view_count
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating competitor: {str(e)}")
+        db.session.rollback()
+        
+        return jsonify({
+            'success': False,
+            'error': 'Failed to update competitor'
+        }), 500
+
+
+@competitor_bp.route('/rename/<int:competitor_id>', methods=['POST'])
+@login_required
+def rename_competitor(competitor_id):
+    """Rename competitor (custom name)"""
+    
+    try:
+        data = request.get_json()
+        new_name = data.get('name', '').strip()
+        
+        if not new_name:
+            return jsonify({
+                'success': False,
+                'error': 'Name is required'
+            }), 400
+        
+        competitor = Competitor.query.filter_by(
+            id=competitor_id,
+            user_id=current_user.id
+        ).first()
+        
+        if not competitor:
+            return jsonify({
+                'success': False,
+                'error': 'Competitor not found'
+            }), 404
+        
+        competitor.custom_name = new_name
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Competitor renamed successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error renaming competitor: {str(e)}")
+        db.session.rollback()
+        
+        return jsonify({
+            'success': False,
+            'error': 'Failed to rename competitor'
+        }), 500
+
+
+@competitor_bp.route('/compare', methods=['POST'])
+@login_required
+def compare_competitors():
+    """
+    Compare multiple competitors
+    
+    Request JSON:
+    {
+        "competitor_ids": [1, 2, 3]
+    }
+    """
+    
+    try:
+        data = request.get_json()
+        competitor_ids = data.get('competitor_ids', [])
+        
+        if not competitor_ids or len(competitor_ids) < 2:
+            return jsonify({
+                'success': False,
+                'error': 'Please select at least 2 competitors to compare'
+            }), 400
+        
+        competitors = Competitor.query.filter(
+            Competitor.id.in_(competitor_ids),
+            Competitor.user_id == current_user.id
+        ).all()
+        
+        if len(competitors) < 2:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid competitor selection'
+            }), 400
+        
+        # Prepare comparison data
+        comparison = {
+            'competitors': [],
+            'metrics': {
+                'subscribers': {},
+                'videos': {},
+                'views': {}
+            }
+        }
+        
+        for comp in competitors:
+            comparison['competitors'].append({
+                'id': comp.id,
+                'name': comp.custom_name or comp.channel_title,
+                'channel_id': comp.channel_id,
+                'subscriber_count': comp.subscriber_count,
+                'video_count': comp.video_count,
+                'view_count': comp.view_count,
+                'thumbnail_url': comp.thumbnail_url
+            })
+            
+            comparison['metrics']['subscribers'][comp.id] = comp.subscriber_count
+            comparison['metrics']['videos'][comp.id] = comp.video_count
+            comparison['metrics']['views'][comp.id] = comp.view_count
+        
+        # Find leader in each category
+        comparison['leaders'] = {
+            'subscribers': max(comparison['competitors'], key=lambda x: x['subscriber_count']),
+            'videos': max(comparison['competitors'], key=lambda x: x['video_count']),
+            'views': max(comparison['competitors'], key=lambda x: x['view_count'])
+        }
+        
+        return jsonify({
+            'success': True,
+            'comparison': comparison
+        })
+        
+    except Exception as e:
+        logger.error(f"Error comparing competitors: {str(e)}")
+        
+        return jsonify({
+            'success': False,
+            'error': 'Comparison failed'
+        }), 500
