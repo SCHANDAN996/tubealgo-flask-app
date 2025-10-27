@@ -3,6 +3,8 @@ Flask-SQLAlchemy
 Flask-Login
 Flask-WTF
 Flask-Migrate
+Flask-Limiter
+Flask-CORS
 WTForms
 psycopg2-binary
 alembic
@@ -19,3 +21,5 @@ python-dateutil
 email-validator
 werkzeug
 click
+beautifulsoup4
+lxml
