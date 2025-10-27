@@ -42,17 +42,6 @@
     <!-- Chart.js (for analytics) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
-    <!-- Google Analytics (if needed) -->
-    {% if config.MEASUREMENT_ID %}
-    <script async src="https://www.googletagmanager.com/gtag/js?id={{ config.MEASUREMENT_ID }}"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', '{{ config.MEASUREMENT_ID }}');
-    </script>
-    {% endif %}
-    
     <!-- Global JavaScript Variables -->
     <script>
         // Make CSRF token available globally
@@ -73,7 +62,7 @@
         window.APP_CONFIG = {
             name: "{{ app_name }}",
             version: "{{ app_version }}",
-            apiUrl: "{{ url_for('api.api_index', _external=True) }}"
+            apiUrl: "{{ url_for('api.get_user_stats', _external=True).rsplit('/', 1)[0] }}"
         };
     </script>
     
