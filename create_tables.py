@@ -1,52 +1,96 @@
 # create_tables.py
+"""
+Database table creation script for TubeAlgo
+This ensures all tables are created properly on Render deployment
+"""
 
-from tubealgo import create_app, db, seed_plans
-# Explicitly import models to ensure they are registered with SQLAlchemy's metadata
-# before db.create_all() is called within this script's context.
-# This imports everything defined in models/__init__.py's __all__
-from tubealgo import models
-import traceback # For printing detailed errors
+import sys
+import traceback
+from tubealgo import create_app, db
 
-print("--- Starting table creation script ---")
-
-# Create Flask app instance to get app context and config
-app = create_app()
-
-# Use app context for database operations
-with app.app_context():
-    print("Inside application context...")
+def create_all_tables():
+    """Create all database tables with proper error handling"""
+    print("=" * 60)
+    print("TUBEALGO DATABASE INITIALIZATION")
+    print("=" * 60)
+    
     try:
-        print("Attempting to create all tables...")
-        # Create all tables based on all imported models associated with 'db'
-        db.create_all()
-        print("db.create_all() executed.")
-
-        # Verify tables (optional but helpful for debugging)
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        tables = inspector.get_table_names()
-        print(f"Tables found in database: {tables}")
-        if "user" in tables and "subscription_plan" in tables:
-             print("Verification successful: 'user' and 'subscription_plan' tables exist.")
-        else:
-             print("WARNING: Key tables ('user', 'subscription_plan') might be missing after create_all!")
-
-
-        # Seed plans only after tables are confirmed/created
-        print("Attempting to seed plans...")
-        seed_plans() # Function already checks if seeding is needed
-
+        # Create Flask app with configuration
+        app = create_app()
+        
+        with app.app_context():
+            print("\n1. Creating database connection...")
+            
+            # Test database connection
+            from sqlalchemy import text
+            try:
+                result = db.session.execute(text('SELECT 1'))
+                print("   ✓ Database connection successful")
+            except Exception as e:
+                print(f"   ✗ Database connection failed: {e}")
+                raise
+            
+            print("\n2. Importing all models...")
+            # Import all models to ensure they're registered with SQLAlchemy
+            from tubealgo.models import (
+                User, Channel, Competitor, ChannelSnapshot, 
+                VideoSnapshot, ContentIdea, SubscriptionPlan,
+                PaymentHistory, SystemLog, DashboardCache,
+                CompetitorAnalysisCache, Goal, ThumbnailTest
+            )
+            print("   ✓ All models imported successfully")
+            
+            print("\n3. Creating database tables...")
+            # Create all tables
+            db.create_all()
+            print("   ✓ Database tables created successfully")
+            
+            print("\n4. Verifying tables...")
+            # Verify critical tables exist
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            
+            critical_tables = ['user', 'channel', 'subscription_plan', 'competitor']
+            missing_tables = [t for t in critical_tables if t not in tables]
+            
+            if missing_tables:
+                print(f"   ✗ Missing critical tables: {missing_tables}")
+                raise Exception(f"Critical tables not created: {missing_tables}")
+            else:
+                print(f"   ✓ All critical tables verified")
+                print(f"   Total tables created: {len(tables)}")
+                print(f"   Tables: {', '.join(sorted(tables))}")
+            
+            print("\n5. Seeding initial data...")
+            # Seed subscription plans if needed
+            from tubealgo import seed_plans
+            seed_plans()
+            print("   ✓ Initial data seeded")
+            
+            print("\n" + "=" * 60)
+            print("DATABASE INITIALIZATION COMPLETE!")
+            print("=" * 60)
+            return True
+            
     except Exception as e:
-        # Catch any error during table creation or seeding
-        print(f"!!! ERROR during table creation or seeding !!!")
-        print(f"Error Type: {type(e).__name__}")
+        print("\n" + "=" * 60)
+        print("DATABASE INITIALIZATION FAILED!")
+        print("=" * 60)
+        print(f"\nError Type: {type(e).__name__}")
         print(f"Error Message: {e}")
-        print("--- Traceback ---")
-        traceback.print_exc() # Print full traceback
-        print("--- End Traceback ---")
-        # Exit with error code to potentially fail the build
-        import sys
+        print("\nFull Traceback:")
+        print("-" * 40)
+        traceback.print_exc()
+        print("-" * 40)
+        return False
+
+if __name__ == "__main__":
+    success = create_all_tables()
+    
+    if not success:
+        print("\n⚠️  Build will fail due to database initialization error")
         sys.exit(1)
-
-
-print("--- Table creation script finished successfully ---")
+    else:
+        print("\n✅ Database is ready for application deployment")
+        sys.exit(0)
