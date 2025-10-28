@@ -118,10 +118,10 @@
   @apply cursor-pointer;
 }
 
-/* इस कोड को main.css फ़ाइल के अंत में जोड़ें */
+/* <<< बदलाव यहाँ है: साइज़ अपडेट किया गया >>> */
 .youtube-icon-compliant {
-  width: 29px;
-  height: 24px;
+  width: 116px;  /* 96px * (29/24) */
+  height: 96px; /* h-24 */
   margin: 0px;
   vertical-align: middle;
   display: inline-block;
