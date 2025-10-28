@@ -3,13 +3,12 @@
 {% block app_content %}
 <div class="max-w-7xl mx-auto">
     {# Compact Centered Header Section #}
-    <div class="flex items-center justify-center gap-2 mb-4">
-        <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-red/10 text-brand-red">
-            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="w-5 h-5">
+    <div class="flex items-center justify-center gap-6 mb-4">
+        <div class="flex items-center justify-center rounded-lg bg-brand-red/10 text-brand-red p-6">
+            <img src="{{ url_for('static', filename='img/yt_icon_red_digital.png') }}" alt="YouTube Icon" class="h-24 w-28">
         </div>
-        <h1 class="text-xl font-bold text-foreground font-display">YT Manager</h1>
+        <h1 class="text-5xl font-bold text-foreground font-display">YT Manager</h1>
     </div>
-
     {# Tab Navigation #}
     <div class="border-b border-border mb-4">
         <nav class="-mb-px flex justify-center space-x-6 overflow-x-auto">
