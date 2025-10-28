@@ -7,7 +7,7 @@ from .. import db
 from .system_models import (
     SystemLog, ApiCache, APIKeyStatus, SiteSetting,
     log_system_event, is_admin_telegram_user, get_setting, get_config_value,
-    DashboardCache
+    DashboardCache, CompetitorAnalysisCache
 )
 from .user_models import User, SearchHistory, ContentIdea, Goal, load_user
 from .youtube_models import YouTubeChannel, ChannelSnapshot, Competitor, ThumbnailTest, VideoSnapshot
@@ -18,7 +18,7 @@ from .payment_models import Coupon, Payment, SubscriptionPlan
 __all__ = [
     "db",
     # System Models & Functions
-    "SystemLog", "ApiCache", "APIKeyStatus", "SiteSetting", "DashboardCache",
+    "SystemLog", "ApiCache", "APIKeyStatus", "SiteSetting", "DashboardCache", "CompetitorAnalysisCache",
     "log_system_event", "is_admin_telegram_user", "get_setting", "get_config_value",
     # User Models & Functions
     "User", "SearchHistory", "ContentIdea", "Goal", "load_user",
