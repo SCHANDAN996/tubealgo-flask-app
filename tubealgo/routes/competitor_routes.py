@@ -56,7 +56,6 @@ def add_competitor():
         channel_query_from_input = data.get('channel_url')
         
         search_input = None
-
         if channel_id_from_selection and channel_id_from_selection.strip().startswith('UC'):
             search_input = channel_id_from_selection.strip()
         elif channel_query_from_input and channel_query_from_input.strip():
@@ -66,7 +65,6 @@ def add_competitor():
             return jsonify({'success': False, 'error': 'Please enter a channel name or URL.'}), 400
         
         analysis_data = analyze_channel(search_input)
-        
         if 'error' in analysis_data:
             return jsonify({'success': False, 'error': analysis_data['error']}), 400
         
@@ -74,7 +72,6 @@ def add_competitor():
         if existing:
             return jsonify({'success': False, 'error': f"'{analysis_data['Title']}' is already in your list."}), 409
 
-        
         Competitor.query.filter_by(user_id=current_user.id).update({Competitor.position: Competitor.position + 1})
         db.session.flush()
 
@@ -88,14 +85,23 @@ def add_competitor():
         db.session.add(new_competitor)
         db.session.commit()
 
-        # *** FIX: Try to queue background task, but don't fail if Redis is down ***
+        # *** UPDATED: Safe background task queuing ***
         try:
             from tubealgo.jobs import perform_full_analysis
-            perform_full_analysis.delay(new_competitor.id)
+            perform_full_analysis.apply_async(
+                args=[new_competitor.id],
+                retry=True,
+                retry_policy={
+                    'max_retries': 3,
+                    'interval_start': 0,
+                    'interval_step': 0.2,
+                    'interval_max': 0.5,
+                }
+            )
         except Exception as celery_error:
-            # Log the error but don't stop the request
-            print(f"WARNING: Could not queue background analysis task: {celery_error}")
-            # The competitor is still added successfully, data will load on demand
+            # Log but don't fail the request
+            print(f"WARNING: Background task failed to queue: {celery_error}")
+            # Data will load on-demand from frontend
 
         return jsonify({
             'success': True,
@@ -105,6 +111,7 @@ def add_competitor():
                 "channel_title": new_competitor.channel_title
             }
         }), 200
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': f'An unexpected server error occurred: {str(e)}'}), 500
