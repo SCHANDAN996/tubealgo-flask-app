@@ -2,7 +2,7 @@
 
 services:
   # 1. Redis Service
-  - name: redis
+  - name: tubealgo-redis
     type: pserv
     env: docker
     dockerfilePath: ./Dockerfile.redis
@@ -13,9 +13,9 @@ services:
       mountPath: /data
       sizeGB: 1
 
-  # 2. Web Service (Flask application served by Gunicorn)
+  # 2. Web Service (Flask application)
   - type: web
-    name: tubealgo
+    name: tubealgo-web
     env: python
     plan: free
     buildCommand: |
@@ -38,8 +38,8 @@ services:
       - key: REDIS_URL
         fromService: 
           type: pserv
-          name: redis
-          property: hostport
+          name: tubealgo-redis
+          property: connectionString
       - key: FLASK_APP
         value: "run.py"
       - key: FLASK_ENV
@@ -48,6 +48,11 @@ services:
         fromDatabase:
           name: tubealgo-database
           property: connectionString
+      # Celery Settings
+      - key: CELERY_TASK_IGNORE_RESULT
+        value: "True"
+      - key: CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP
+        value: "True"
       # --- Other secrets ---
       - key: YOUTUBE_API_KEYS
         sync: false
@@ -72,25 +77,27 @@ services:
 
   # 3. Celery Worker Service
   - type: worker
-    name: celery-worker
+    name: tubealgo-celery-worker
     env: python
     plan: free
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A run:celery worker --loglevel=info"
+    startCommand: "celery -A tubealgo.celery worker --loglevel=info --pool=solo"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: REDIS_URL
         fromService:
           type: pserv
-          name: redis
-          property: hostport
+          name: tubealgo-redis
+          property: connectionString
       - key: DATABASE_URL
         fromDatabase:
           name: tubealgo-database
           property: connectionString
       - key: FLASK_ENV
         value: "production"
+      - key: CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP
+        value: "True"
       # --- secrets ---
       - key: YOUTUBE_API_KEYS
         sync: false
@@ -103,25 +110,27 @@ services:
 
   # 4. Celery Beat Service
   - type: worker
-    name: celery-beat
+    name: tubealgo-celery-beat
     env: python
     plan: free
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A run:celery beat --loglevel=info"
+    startCommand: "celery -A tubealgo.celery beat --loglevel=info"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: REDIS_URL
         fromService:
           type: pserv
-          name: redis
-          property: hostport
+          name: tubealgo-redis
+          property: connectionString
       - key: DATABASE_URL
         fromDatabase:
           name: tubealgo-database
           property: connectionString
       - key: FLASK_ENV
         value: "production"
+      - key: CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP
+        value: "True"
       # --- secrets ---
       - key: YOUTUBE_API_KEYS
         sync: false
