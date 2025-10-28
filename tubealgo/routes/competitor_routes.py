@@ -16,7 +16,6 @@ from tubealgo.routes.api_routes import get_full_competitor_package
 from tubealgo.routes.utils import get_video_info_dict
 from tubealgo.decorators import check_limits, RateLimitExceeded
 import json
-from tubealgo.jobs import perform_full_analysis
 from youtube_transcript_api import YouTubeTranscriptApi
 
 
@@ -89,7 +88,14 @@ def add_competitor():
         db.session.add(new_competitor)
         db.session.commit()
 
-        perform_full_analysis.delay(new_competitor.id)
+        # *** FIX: Try to queue background task, but don't fail if Redis is down ***
+        try:
+            from tubealgo.jobs import perform_full_analysis
+            perform_full_analysis.delay(new_competitor.id)
+        except Exception as celery_error:
+            # Log the error but don't stop the request
+            print(f"WARNING: Could not queue background analysis task: {celery_error}")
+            # The competitor is still added successfully, data will load on demand
 
         return jsonify({
             'success': True,
