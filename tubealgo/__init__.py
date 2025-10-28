@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from celery import Celery, Task
 from celery.schedules import crontab
 import config
-from sqlalchemy import text, inspect # inspect जोड़ा गया
+from sqlalchemy import text, inspect
 from sqlalchemy.exc import OperationalError
 import pytz
 from flask_wtf.csrf import CSRFProtect, generate_csrf
@@ -115,11 +115,21 @@ def create_app():
     app.config["REDIS_URL"] = app.config.get("REDIS_URL", "redis://127.0.0.1:6379/0")
     app.register_blueprint(sse, url_prefix='/stream')
 
-    # Configure Celery
+    # *** UPDATED: Configure Celery with connection retry ***
     celery.conf.update(
         broker_url=app.config["CELERY_BROKER_URL"],
         result_backend=app.config["CELERY_RESULT_BACKEND"],
+        broker_connection_retry_on_startup=True,
+        task_ignore_result=True,
+        broker_connection_retry=True,
+        broker_connection_max_retries=10,
+        task_serializer='json',
+        accept_content=['json'],
+        result_serializer='json',
+        timezone='UTC',
+        enable_utc=True,
     )
+    
     # Define Celery beat schedule for periodic tasks
     celery.conf.beat_schedule = {
         'take-daily-snapshots-every-day': {
@@ -182,7 +192,6 @@ def create_app():
                     db.session.rollback()
                     # Log error more quietly in production
                     app.logger.error(f"Error updating last_seen for user {current_user.id}: {e}")
-                    # print(f"Error updating last_seen for user {current_user.id}: {e}") # Keep for local debug
 
     @app.after_request
     def add_security_headers(response):
@@ -246,18 +255,15 @@ def create_app():
             initialize_ai_clients()
 
             # Seed plans only if the table exists (created by create_tables.py)
-            # This is less critical now but keeps the logic if needed
             seed_plans()
 
         except Exception as e:
             # Log a warning, but allow the app to continue starting
-            # Errors during requests will be caught by error handlers or specific try/excepts
             print(f"WARNING: Could not verify DB connection or initialize services on startup: {e}")
-            db.session.rollback() # Ensure session is clean if DB check failed mid-transaction
+            db.session.rollback()
 
 
     # --- Import and register Blueprints ---
-    # (Blueprints define the routes/views of the application)
     from .auth_local import auth_local_bp
     app.register_blueprint(auth_local_bp, url_prefix='/')
 
@@ -277,10 +283,10 @@ def create_app():
     app.register_blueprint(analysis_bp, url_prefix='/')
 
     from .routes.api_routes import api_bp
-    app.register_blueprint(api_bp) # Assumes default prefix '/' or defined within blueprint
+    app.register_blueprint(api_bp)
 
     from .routes.ai_api_routes import ai_api_bp
-    app.register_blueprint(ai_api_bp) # Assumes prefix defined within blueprint
+    app.register_blueprint(ai_api_bp)
 
     from .routes.tool_routes import tool_bp
     app.register_blueprint(tool_bp, url_prefix='/')
@@ -291,11 +297,9 @@ def create_app():
     from .routes.payment_routes import payment_bp
     app.register_blueprint(payment_bp, url_prefix='/payment')
 
-    # Import the admin blueprint package
     from .routes.admin import admin_bp
     app.register_blueprint(admin_bp, url_prefix='/admin')
 
-    # Import manager related blueprints
     from .routes.video_manager_routes import video_manager_bp
     app.register_blueprint(video_manager_bp, url_prefix='/manage')
 
@@ -305,7 +309,6 @@ def create_app():
     from .routes.ab_test_routes import ab_test_bp
     app.register_blueprint(ab_test_bp, url_prefix='/manage')
 
-    # Other blueprints
     from .routes.report_routes import report_bp
     app.register_blueprint(report_bp)
 
@@ -321,14 +324,12 @@ def create_app():
     from .routes.user_routes import user_bp
     app.register_blueprint(user_bp)
 
-
     # Exempt specific blueprints from CSRF protection if they handle external webhooks/APIs
     csrf.exempt(api_bp)
     csrf.exempt(ai_api_bp)
     csrf.exempt(payment_bp)
 
     # Import models at the end to ensure db is initialized and blueprints are registered
-    # This also makes models available if db.create_all() is called elsewhere implicitly by extensions
     from . import models
 
     # Return the configured app instance
@@ -356,7 +357,7 @@ def format_relative_time(dt_input):
     diff = now - dt_obj
     seconds = diff.total_seconds()
 
-    # Handle future dates (should ideally not happen for 'last seen')
+    # Handle future dates
     if seconds < 0: return "in the future"
     # Provide human-readable relative time
     if seconds < 60: return "just now"
@@ -367,25 +368,21 @@ def format_relative_time(dt_input):
     days = hours / 24
     if days < 7: return f"{int(days)} day{'s' if int(days) > 1 else ''} ago"
     weeks = days / 7
-    if weeks < 4.345: return f"{int(weeks)} week{'s' if int(weeks) > 1 else ''} ago" # Approx weeks in month
-    months = days / 30.437 # Approx days in month
+    if weeks < 4.345: return f"{int(weeks)} week{'s' if int(weeks) > 1 else ''} ago"
+    months = days / 30.437
     if months < 12: return f"{int(months)} month{'s' if int(months) > 1 else ''} ago"
-    years = days / 365.25 # Account for leap years
+    years = days / 365.25
     return f"{int(years)} year{'s' if int(years) > 1 else ''} ago"
 
 def seed_plans():
     """Seeds the database with default subscription plans if table exists and is empty."""
-    # This function is now primarily called from create_tables.py after tables are created
-    from .models import SubscriptionPlan # Local import for models
-    from sqlalchemy import inspect # Local import for inspect
+    from .models import SubscriptionPlan
+    from sqlalchemy import inspect
     try:
         inspector = inspect(db.engine)
-        # Check if the SubscriptionPlan table exists in the database
         if inspector.has_table(SubscriptionPlan.__tablename__):
-            # Check if the table is currently empty
             if SubscriptionPlan.query.count() == 0:
                 print("Seeding subscription plans...")
-                # Define default plan objects
                 free_plan = SubscriptionPlan(
                     plan_id='free', name='Free', price=0, competitors_limit=2,
                     keyword_searches_limit=5, ai_generations_limit=3, playlist_suggestions_limit=3, has_comment_reply=False
@@ -398,25 +395,16 @@ def seed_plans():
                 )
                 pro_plan = SubscriptionPlan(
                     plan_id='pro', name='Pro', price=99900, slashed_price=199900,
-                    competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1, # -1 signifies unlimited
+                    competitors_limit=-1, keyword_searches_limit=-1, ai_generations_limit=-1,
                     has_discover_tools=True, has_ai_suggestions=True, playlist_suggestions_limit=-1,
                     has_comment_reply=True
                 )
-                # Add plans to session and commit
                 db.session.add_all([free_plan, creator_plan, pro_plan])
                 db.session.commit()
                 print("Plans seeded successfully.")
-            # else:
-                # Optionally log that seeding is skipped because table has data
-                # print("SubscriptionPlan table already has data. Skipping seeding.")
-        # else:
-            # Optionally log that seeding is skipped because table doesn't exist yet
-            # print("SubscriptionPlan table does not exist yet. Skipping seeding.")
     except OperationalError as e:
-        # Handle potential errors during database operations (e.g., connection issues)
         print(f"Skipping seed_plans due to database error (OperationalError): {e}")
-        db.session.rollback() # Rollback the transaction
+        db.session.rollback()
     except Exception as e:
-        # Handle any other unexpected errors during seeding
         print(f"Error seeding plans: {e}")
-        db.session.rollback() # Rollback the transaction
+        db.session.rollback()
