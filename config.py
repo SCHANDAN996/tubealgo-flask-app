@@ -33,6 +33,17 @@ class Config:
     CASHFREE_SECRET_KEY = os.environ.get('CASHFREE_SECRET_KEY')
     CASHFREE_ENV = os.environ.get('CASHFREE_ENV', 'PROD')
 
-    # Celery Configuration (Corrected)
-    CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    # *** FIX: Celery Configuration with fallback ***
+    # Try Redis first, fall back to in-memory if not available
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    
+    # For local development without Redis, you can use:
+    # CELERY_BROKER_URL = 'memory://'  # Not recommended for production
+    # CELERY_RESULT_BACKEND = 'cache+memory://'
+    
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+    
+    # Celery task settings
+    CELERY_TASK_IGNORE_RESULT = True  # Don't store results if not needed
+    CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == 'true'  # Run tasks synchronously in dev
