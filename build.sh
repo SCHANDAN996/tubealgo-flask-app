@@ -20,4 +20,8 @@ npm run build
 echo "🐍 Installing Python dependencies..."
 pip install -r requirements.txt
 
+# Step 5: Create database tables
+echo "🗄️ Creating database tables..."
+python create_tables.py
+
 echo "🎉 Build process completed successfully!"
