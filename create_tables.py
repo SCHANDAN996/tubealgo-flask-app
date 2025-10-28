@@ -33,10 +33,23 @@ def create_all_tables():
             print("\n2. Importing all models...")
             # Import all models to ensure they're registered with SQLAlchemy
             from tubealgo.models import (
-                User, Channel, Competitor, ChannelSnapshot, 
-                VideoSnapshot, ContentIdea, SubscriptionPlan,
-                PaymentHistory, SystemLog, DashboardCache,
-                CompetitorAnalysisCache, Goal, ThumbnailTest
+                User, 
+                YouTubeChannel,
+                Competitor, 
+                ChannelSnapshot, 
+                VideoSnapshot, 
+                ContentIdea, 
+                SubscriptionPlan,
+                Payment,
+                SystemLog, 
+                DashboardCache,
+                Goal, 
+                ThumbnailTest,
+                SearchHistory,
+                Coupon,
+                ApiCache,
+                APIKeyStatus,
+                SiteSetting
             )
             print("   ✓ All models imported successfully")
             
@@ -51,11 +64,12 @@ def create_all_tables():
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
             
-            critical_tables = ['user', 'channel', 'subscription_plan', 'competitor']
+            critical_tables = ['user', 'you_tube_channel', 'subscription_plan', 'competitor']
             missing_tables = [t for t in critical_tables if t not in tables]
             
             if missing_tables:
                 print(f"   ✗ Missing critical tables: {missing_tables}")
+                print(f"   Available tables: {', '.join(sorted(tables))}")
                 raise Exception(f"Critical tables not created: {missing_tables}")
             else:
                 print(f"   ✓ All critical tables verified")
