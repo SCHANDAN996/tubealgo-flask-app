@@ -11,16 +11,18 @@ from tubealgo import db
 from tubealgo.models import get_config_value
 
 # Define all possible scopes that the credentials might need
+# --- UPDATE: Added missing scopes to match Google Console ---
 ALL_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email', 
     'https://www.googleapis.com/auth/userinfo.profile', 
     'openid',
     'https://www.googleapis.com/auth/youtube', 
     'https://www.googleapis.com/auth/youtube.upload',
-    'https://www.googleapis.com/auth/yt-analytics.readonly'
+    'https://www.googleapis.com/auth/yt-analytics.readonly',
+    'https://www.googleapis.com/auth/youtube.force-ssl',  # Added for managing captions/metadata
+    'https://www.googleapis.com/auth/youtube.readonly'    # Added for verification compliance
 ]
 
-# --- यहाँ बदलाव किया गया है ---
 def get_credentials(user=None):
     """
     Gets valid Google credentials for a given user or the current user.
