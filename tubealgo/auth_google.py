@@ -4,7 +4,7 @@ import os
 from flask import render_template, request, redirect, url_for, flash, Blueprint, session
 from flask_login import login_user, current_user, login_required
 from google_auth_oauthlib.flow import Flow
-from . import db # <-- THIS IS THE CORRECTED IMPORT
+from . import db 
 from .models import get_config_value
 from .services import user_service
 
@@ -16,11 +16,13 @@ LOGIN_SCOPES = [
     'openid'
 ]
 
+# --- UPDATE: Added 'youtube.readonly' to match Cloud Console Request ---
 YOUTUBE_SCOPES = [
     'https://www.googleapis.com/auth/youtube', 
     'https://www.googleapis.com/auth/youtube.upload',
     'https://www.googleapis.com/auth/yt-analytics.readonly',
-    'https://www.googleapis.com/auth/youtube.force-ssl'
+    'https://www.googleapis.com/auth/youtube.force-ssl',
+    'https://www.googleapis.com/auth/youtube.readonly'  # <--- यह लाइन जोड़ी गई है
 ]
 
 def get_flow(scopes, redirect_uri):
@@ -79,7 +81,11 @@ def google_callback():
     
     flow = get_flow(scopes_used, url_for('auth_google.google_callback', _external=True))
     
+    # Note: Production servers usually use HTTPS, so this environment variable 
+    # might not be needed if your server is configured correctly with SSL.
+    # However, keeping it doesn't hurt if behind a proxy.
     os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+    
     try:
         flow.fetch_token(authorization_response=request.url)
     except Exception as e:
